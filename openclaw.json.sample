@@ -1,0 +1,37 @@
+{
+  "gateway": { "mode": "local", "bind": "loopback", "port": 18789 },
+
+  "plugins": {
+    "entries": { "botmax": { "enabled": true } },
+    "slots": { "memory": "memory-core" }
+  },
+
+  "agents": {
+    "defaults": {
+      "workspace": "/home/node/.openclaw/workspace",
+      "model": { "primary": "minimax-cn/MiniMax-M2.5" },
+      "models": { "minimax-cn/MiniMax-M2.5": { "alias": "Minimax" } }
+    }
+  },
+
+  "models": {
+    "mode": "merge",
+    "providers": {
+      "minimax-cn": {
+        "baseUrl": "https://api.minimaxi.com/anthropic",
+        "api": "anthropic-messages",
+        "apiKey": "sk-api-6A6db5lPkYhwVU_FX5bYO3PWVsIo13_5OQ_eDJilVNlPVKZgWfGANoEZzpSfnu4sUx0fcBNV9m15UifRnLQ1cZ7cWLTu7YzCASvPyiNob6unbSo74eEnG9s",
+        "models": [
+          {
+            "id": "MiniMax-M2.5",
+            "name": "MiniMax M2.5",
+            "reasoning": true,
+            "input": ["text"],
+            "contextWindow": 200000,
+            "maxTokens": 8192
+          }
+        ]
+      }
+    }
+  }
+}
