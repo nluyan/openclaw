@@ -100,6 +100,35 @@ Note: run `docker compose ...` from the repo root. If you enabled
 docker compose -f docker-compose.yml -f docker-compose.extra.yml <command>
 ```
 
+### Botmax only image
+
+If you want an image that keeps only the `botmax` channel plugin, build with
+`Dockerfile.botmax`:
+
+```bash
+docker build -t openclaw:botmax -f Dockerfile.botmax .
+docker run --rm -p 18789:18789 -v /path/to/.openclaw:/home/node/.openclaw openclaw:botmax
+```
+
+This image:
+
+- removes bundled **channel** plugins under `extensions/` except `extensions/botmax`
+- keeps functional plugins like `memory-core`, `device-pair`, `phone-control`, `llm-task`, `lobster`, and auth helpers
+- expects you to mount `/home/node/.openclaw` (config + state) for a ready-to-run setup
+
+If you mount your own config file, keep the same intent by setting:
+
+```json
+{
+  "plugins": { "allow": ["botmax"] },
+  "channels": { "botmax": { "enabled": true } }
+}
+```
+
+Note: if you add plugins under `/home/node/.openclaw/extensions`, ensure the
+plugin paths are not world-writable. OpenClaw will block world-writable plugin
+paths for safety.
+
 ### Control UI token + pairing (Docker)
 
 If you see “unauthorized” or “disconnected (1008): pairing required”, fetch a
@@ -325,7 +354,6 @@ pnpm test:docker:qr
 ### Notes
 
 - Gateway bind defaults to `lan` for container use.
-- Dockerfile CMD uses `--allow-unconfigured`; mounted config with `gateway.mode` not `local` will still start. Override CMD to enforce the guard.
 - The gateway container is the source of truth for sessions (`~/.openclaw/agents/<agentId>/sessions/`).
 
 ## Agent Sandbox (host gateway + Docker tools)
