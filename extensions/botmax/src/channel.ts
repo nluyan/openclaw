@@ -62,7 +62,7 @@ export const botmaxPlugin: ChannelPlugin<ResolvedBotmaxAccount> = {
         cfg,
         sectionKey: "botmax",
         accountId,
-        clearBaseFields: ["server", "botId", "imUserId", "token", "name"],
+        clearBaseFields: ["server", "textChunkLimit", "doneToken", "name"],
       }),
     isConfigured: (account) => isAccountConfigured(account),
     describeAccount: (account): ChannelAccountSnapshot => ({
@@ -71,26 +71,24 @@ export const botmaxPlugin: ChannelPlugin<ResolvedBotmaxAccount> = {
       enabled: account.enabled,
       configured: isAccountConfigured(account),
       server: account.server,
-      imUserId: account.imUserId,
     }),
     resolveDefaultTo: ({ cfg, accountId }) => {
-      const account = resolveAccount(cfg, accountId);
-      return account.imUserId?.trim() || undefined;
+      void cfg;
+      void accountId;
+      return "all";
     },
   },
   messaging: {
     normalizeTarget: normalizeBotmaxMessagingTarget,
     targetResolver: {
       looksLikeId: (raw) => Boolean(raw?.trim()),
-      hint: "<imUserId>",
+      hint: "<recipient_id>",
     },
   },
   directory: {
     self: async () => null,
     listPeers: async ({ cfg, accountId }) => {
-      const account = resolveAccount(cfg, accountId);
-      const peerId = account.imUserId?.trim();
-      return peerId ? [{ kind: "user", id: normalizeBotmaxId(peerId) }] : [];
+      return [];
     },
     listGroups: async () => [],
   },
@@ -104,15 +102,7 @@ export const botmaxPlugin: ChannelPlugin<ResolvedBotmaxAccount> = {
       if (!isAccountConfigured(account)) {
         throw new Error("Botmax account is not configured");
       }
-      const target = normalizeBotmaxId(to ?? "") || normalizeBotmaxId(account.imUserId);
-      if (!target) {
-        throw new Error("Botmax target is required");
-      }
-      if (normalizeBotmaxId(account.imUserId) !== target) {
-        throw new Error(
-          `Botmax target must match account imUserId (${account.imUserId}) or select the correct account`,
-        );
-      }
+      const target = normalizeBotmaxId(to ?? "") || "all";
       const core = getBotmaxRuntime();
       const tableMode = core.channel.text.resolveMarkdownTableMode({
         cfg,
@@ -122,7 +112,7 @@ export const botmaxPlugin: ChannelPlugin<ResolvedBotmaxAccount> = {
       const message = core.channel.text.convertMarkdownTables(text ?? "", tableMode);
       const releaseHeartbeat = suspendBotmaxHeartbeat(account.accountId);
       try {
-        await sendBotmaxText(account.accountId, message);
+        await sendBotmaxText(account.accountId, target, message);
       } finally {
         releaseHeartbeat();
       }
@@ -133,15 +123,7 @@ export const botmaxPlugin: ChannelPlugin<ResolvedBotmaxAccount> = {
       if (!isAccountConfigured(account)) {
         throw new Error("Botmax account is not configured");
       }
-      const target = normalizeBotmaxId(to ?? "") || normalizeBotmaxId(account.imUserId);
-      if (!target) {
-        throw new Error("Botmax target is required");
-      }
-      if (normalizeBotmaxId(account.imUserId) !== target) {
-        throw new Error(
-          `Botmax target must match account imUserId (${account.imUserId}) or select the correct account`,
-        );
-      }
+      const target = normalizeBotmaxId(to ?? "") || "all";
       if (!mediaUrl) {
         throw new Error("Botmax mediaUrl is required");
       }
@@ -155,7 +137,7 @@ export const botmaxPlugin: ChannelPlugin<ResolvedBotmaxAccount> = {
       const payload = `${caption}\n\nAttachment: ${mediaUrl}`.trim();
       const releaseHeartbeat = suspendBotmaxHeartbeat(account.accountId);
       try {
-        await sendBotmaxText(account.accountId, payload);
+        await sendBotmaxText(account.accountId, target, payload);
       } finally {
         releaseHeartbeat();
       }
@@ -180,7 +162,6 @@ export const botmaxPlugin: ChannelPlugin<ResolvedBotmaxAccount> = {
         lastInboundAt: runtime?.lastInboundAt ?? null,
         lastOutboundAt: runtime?.lastOutboundAt ?? null,
         server: account.server,
-        imUserId: account.imUserId,
       };
     },
   },

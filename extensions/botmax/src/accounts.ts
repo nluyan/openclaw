@@ -27,18 +27,11 @@ export function resolveAccount(cfg: OpenClawConfig, accountId?: string | null): 
   const accountOverride = channelConfig.accounts?.[resolvedAccountId] ?? {};
 
   const envServer = process.env.BOTMAX_SERVER;
-  const envBotId = process.env.BOTMAX_BOT_ID;
-  const envImUserId = process.env.BOTMAX_IM_USER_ID;
-  const envToken = process.env.BOTMAX_TOKEN;
   const envTextChunkLimit = process.env.BOTMAX_TEXT_CHUNK_LIMIT;
   const envDoneToken = process.env.BOTMAX_DONE_TOKEN;
 
   const server =
     accountOverride.server ?? channelConfig.server ?? envServer ?? "";
-  const botId = accountOverride.botId ?? channelConfig.botId ?? envBotId ?? "";
-  const imUserId =
-    accountOverride.imUserId ?? channelConfig.imUserId ?? envImUserId ?? "";
-  const token = accountOverride.token ?? channelConfig.token ?? envToken ?? "";
   const textChunkLimitRaw =
     accountOverride.textChunkLimit ?? channelConfig.textChunkLimit ?? envTextChunkLimit;
   const textChunkLimit =
@@ -63,9 +56,6 @@ export function resolveAccount(cfg: OpenClawConfig, accountId?: string | null): 
     name: accountOverride.name ?? channelConfig.name,
     enabled: accountOverride.enabled ?? channelConfig.enabled ?? true,
     server,
-    botId,
-    imUserId,
-    token,
     textChunkLimit: Number.isFinite(textChunkLimit) && textChunkLimit > 0
       ? textChunkLimit
       : DEFAULT_TEXT_CHUNK_LIMIT,
@@ -74,10 +64,5 @@ export function resolveAccount(cfg: OpenClawConfig, accountId?: string | null): 
 }
 
 export function isAccountConfigured(account: ResolvedBotmaxAccount): boolean {
-  return Boolean(
-    account.server.trim() &&
-      account.botId.trim() &&
-      account.imUserId.trim() &&
-      account.token.trim(),
-  );
+  return Boolean(account.server.trim());
 }

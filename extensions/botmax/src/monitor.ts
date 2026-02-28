@@ -5,9 +5,11 @@ import {
   clearActiveConnection,
   createBotmaxSender,
   redactBotmaxUrl,
+  rememberBotmaxSender,
   setActiveConnection,
 } from "./connection.js";
 import { handleBotmaxInbound } from "./inbound.js";
+import { parseBotmaxInboundText } from "./message-format.js";
 import type { ResolvedBotmaxAccount } from "./types.js";
 
 export type BotmaxMonitorOptions = {
@@ -144,13 +146,25 @@ export function monitorBotmaxAccount(options: BotmaxMonitorOptions): { stop: () 
           sendHeartbeat: sender.sendHeartbeat,
           setHeartbeatBlocked: sender.setHeartbeatBlocked,
           statusSink: (patch) => statusSink?.(patch),
+          log: (message) => runtime.log?.(message),
         });
 
         const heartbeat = setInterval(() => {
           if (stopped || abortSignal.aborted || ws.readyState !== WebSocket.OPEN) {
             return;
           }
-          void sender.sendHeartbeat(HEARTBEAT_PING);
+          void sender
+            .sendHeartbeat(HEARTBEAT_PING)
+            .then((sent) => {
+              if (!sent) {
+                runtime.log?.(`botmax[${account.accountId}] heartbeat suppressed`);
+              }
+            })
+            .catch((err) => {
+              runtime.error?.(
+                `botmax[${account.accountId}]: failed to send heartbeat: ${String(err)}`,
+              );
+            });
         }, HEARTBEAT_INTERVAL_MS);
 
         ws.on("message", (data) => {
@@ -158,12 +172,17 @@ export function monitorBotmaxAccount(options: BotmaxMonitorOptions): { stop: () 
             return;
           }
           const text = typeof data === "string" ? data : data.toString("utf8");
-          const trimmed = text.trim();
-          if (trimmed === HEARTBEAT_PONG || trimmed === HEARTBEAT_PING) {
+          if (text !== HEARTBEAT_PONG) {
+            runtime.log?.(`botmax[${account.accountId}] inbound raw: ${text}`);
+          }
+          const inbound = parseBotmaxInboundText(text);
+          if (!inbound) {
             return;
           }
+          rememberBotmaxSender(account.accountId, inbound.senderId);
           void handleBotmaxInbound({
-            text,
+            senderId: inbound.senderId,
+            body: inbound.body,
             account,
             config,
             runtime,

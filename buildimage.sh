@@ -1,0 +1,1 @@
+docker build -t openclaw-botmax:latest -f Dockerfile.botmax .

@@ -11,25 +11,21 @@ import { sendBotmaxText, suspendBotmaxHeartbeat } from "./connection.js";
 import type { ResolvedBotmaxAccount } from "./types.js";
 
 export async function handleBotmaxInbound(params: {
-  text: string;
+  senderId: string;
+  body: string;
   account: ResolvedBotmaxAccount;
   config: OpenClawConfig;
   runtime: RuntimeEnv;
   statusSink?: (patch: { lastInboundAt?: number; lastOutboundAt?: number }) => void;
 }): Promise<void> {
-  const { text, account, config, runtime, statusSink } = params;
+  const { senderId, body, account, config, runtime, statusSink } = params;
   const core = getBotmaxRuntime();
-  const rawBody = text.trim();
+  const rawBody = body.trim();
   if (!rawBody) {
-    return;
-  }
-  if (rawBody === "<<<ping>>>" || rawBody === "<<<pong>>>") {
     return;
   }
 
   statusSink?.({ lastInboundAt: Date.now() });
-
-  const senderId = account.imUserId;
 
   const route = core.channel.routing.resolveAgentRoute({
     cfg: config,
@@ -50,7 +46,7 @@ export async function handleBotmaxInbound(params: {
     sessionKey: route.sessionKey,
   });
 
-  const body = core.channel.reply.formatAgentEnvelope({
+  const envelopeBody = core.channel.reply.formatAgentEnvelope({
     channel: "Botmax",
     from: senderId,
     timestamp: Date.now(),
@@ -60,12 +56,12 @@ export async function handleBotmaxInbound(params: {
   });
 
   const ctxPayload = core.channel.reply.finalizeInboundContext({
-    Body: body,
+    Body: envelopeBody,
     BodyForAgent: rawBody,
     RawBody: rawBody,
     CommandBody: rawBody,
-    From: `botmax:${senderId}`,
-    To: `botmax:${senderId}`,
+    From: senderId,
+    To: senderId,
     SessionKey: route.sessionKey,
     AccountId: route.accountId,
     ChatType: "direct",
@@ -76,7 +72,7 @@ export async function handleBotmaxInbound(params: {
     Surface: "botmax",
     Timestamp: Date.now(),
     OriginatingChannel: "botmax",
-    OriginatingTo: `botmax:${senderId}`,
+    OriginatingTo: senderId,
     CommandAuthorized: true,
   });
 
@@ -101,6 +97,8 @@ export async function handleBotmaxInbound(params: {
     accountId: account.accountId,
   });
 
+  let outboundDelivered = 0;
+
   const deliver = createNormalizedOutboundDeliverer(async (payload) => {
     const combined = formatTextWithAttachmentLinks(
       payload.text,
@@ -116,7 +114,8 @@ export async function handleBotmaxInbound(params: {
       if (!chunk) {
         continue;
       }
-      await sendBotmaxText(account.accountId, chunk);
+      await sendBotmaxText(account.accountId, senderId, chunk);
+      outboundDelivered += 1;
     }
   });
 
@@ -138,8 +137,13 @@ export async function handleBotmaxInbound(params: {
     });
   } finally {
     try {
+      if (outboundDelivered === 0) {
+        runtime.log?.(
+          `botmax[${account.accountId}] no outbound reply for sender ${senderId}`,
+        );
+      }
       if (account.doneToken !== null) {
-        await sendBotmaxText(account.accountId, account.doneToken);
+        await sendBotmaxText(account.accountId, senderId, account.doneToken);
       }
     } finally {
       releaseHeartbeat();

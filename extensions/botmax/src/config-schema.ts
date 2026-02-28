@@ -15,9 +15,6 @@ const BotmaxAccountSchema = z.object({
   name: z.string().optional(),
   enabled: z.boolean().optional(),
   server: wsUrlSchema.optional(),
-  botId: z.string().optional(),
-  imUserId: z.string().optional(),
-  token: z.string().optional(),
   textChunkLimit: z.number().int().positive().optional(),
   doneToken: z.string().nullable().optional(),
 });
