@@ -1,0 +1,1435 @@
+{
+  "generatedAt": "2026-02-28T08:40:15.681Z",
+  "scope": "openclaw onboard -> Model/auth provider",
+  "sourceFiles": [
+    "src/wizard/onboarding.ts",
+    "src/commands/auth-choice-prompt.ts",
+    "src/commands/auth-choice-options.ts",
+    "src/commands/auth-choice.preferred-provider.ts",
+    "src/commands/auth-choice.apply.*.ts",
+    "src/commands/onboard-auth.config-*.ts",
+    "src/commands/onboard-auth.models.ts",
+    "src/commands/onboard-provider-auth-flags.ts",
+    "src/agents/*-models.ts",
+    "src/agents/models-config.providers.ts",
+    "src/providers/kilocode-shared.ts",
+    "extensions/*/index.ts"
+  ],
+  "modelCatalogs": {
+    "minimax_onboard_catalog": [
+      "MiniMax-M2.1",
+      "MiniMax-M2.1-lightning",
+      "MiniMax-M2.5",
+      "MiniMax-M2.5-Lightning"
+    ],
+    "minimax_implicit_provider": [
+      "MiniMax-M2.1",
+      "MiniMax-M2.1-lightning",
+      "MiniMax-VL-01",
+      "MiniMax-M2.5",
+      "MiniMax-M2.5-Lightning"
+    ],
+    "minimax_portal_implicit_provider": [
+      "MiniMax-M2.1",
+      "MiniMax-M2.5"
+    ],
+    "minimax_portal_plugin": [
+      "MiniMax-M2.1",
+      "MiniMax-M2.5"
+    ],
+    "qwen_portal_plugin": [
+      "coder-model",
+      "vision-model"
+    ],
+    "moonshot": [
+      "kimi-k2.5"
+    ],
+    "kimi_coding": [
+      "k2p5"
+    ],
+    "zai": [
+      "glm-5",
+      "glm-4.7",
+      "glm-4.7-flash",
+      "glm-4.7-flashx"
+    ],
+    "qianfan": [
+      "deepseek-v3.2",
+      "ernie-5.0-thinking-preview"
+    ],
+    "xiaomi": [
+      "mimo-v2-flash"
+    ],
+    "kilocode": [
+      "anthropic/claude-opus-4.6",
+      "z-ai/glm-5:free",
+      "minimax/minimax-m2.5:free",
+      "anthropic/claude-sonnet-4.5",
+      "openai/gpt-5.2",
+      "google/gemini-3-pro-preview",
+      "google/gemini-3-flash-preview",
+      "x-ai/grok-code-fast-1",
+      "moonshotai/kimi-k2.5"
+    ],
+    "synthetic": [
+      "hf:MiniMaxAI/MiniMax-M2.1",
+      "hf:moonshotai/Kimi-K2-Thinking",
+      "hf:zai-org/GLM-4.7",
+      "hf:deepseek-ai/DeepSeek-R1-0528",
+      "hf:deepseek-ai/DeepSeek-V3-0324",
+      "hf:deepseek-ai/DeepSeek-V3.1",
+      "hf:deepseek-ai/DeepSeek-V3.1-Terminus",
+      "hf:deepseek-ai/DeepSeek-V3.2",
+      "hf:meta-llama/Llama-3.3-70B-Instruct",
+      "hf:meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+      "hf:moonshotai/Kimi-K2-Instruct-0905",
+      "hf:moonshotai/Kimi-K2.5",
+      "hf:openai/gpt-oss-120b",
+      "hf:Qwen/Qwen3-235B-A22B-Instruct-2507",
+      "hf:Qwen/Qwen3-Coder-480B-A35B-Instruct",
+      "hf:Qwen/Qwen3-VL-235B-A22B-Instruct",
+      "hf:zai-org/GLM-4.5",
+      "hf:zai-org/GLM-4.6",
+      "hf:zai-org/GLM-5",
+      "hf:deepseek-ai/DeepSeek-V3",
+      "hf:Qwen/Qwen3-235B-A22B-Thinking-2507"
+    ],
+    "together": [
+      "zai-org/GLM-4.7",
+      "moonshotai/Kimi-K2.5",
+      "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+      "meta-llama/Llama-4-Scout-17B-16E-Instruct",
+      "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+      "deepseek-ai/DeepSeek-V3.1",
+      "deepseek-ai/DeepSeek-R1",
+      "moonshotai/Kimi-K2-Instruct-0905"
+    ],
+    "huggingface_static": [
+      "deepseek-ai/DeepSeek-R1",
+      "deepseek-ai/DeepSeek-V3.1",
+      "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+      "openai/gpt-oss-120b"
+    ],
+    "venice_static": [
+      "llama-3.3-70b",
+      "llama-3.2-3b",
+      "hermes-3-llama-3.1-405b",
+      "qwen3-235b-a22b-thinking-2507",
+      "qwen3-235b-a22b-instruct-2507",
+      "qwen3-coder-480b-a35b-instruct",
+      "qwen3-next-80b",
+      "qwen3-vl-235b-a22b",
+      "qwen3-4b",
+      "deepseek-v3.2",
+      "venice-uncensored",
+      "mistral-31-24b",
+      "google-gemma-3-27b-it",
+      "openai-gpt-oss-120b",
+      "zai-org-glm-4.7",
+      "claude-opus-45",
+      "claude-sonnet-45",
+      "openai-gpt-52",
+      "openai-gpt-52-codex",
+      "gemini-3-pro-preview",
+      "gemini-3-flash-preview",
+      "grok-41-fast",
+      "grok-code-fast-1",
+      "kimi-k2-thinking",
+      "minimax-m21"
+    ],
+    "doubao": [
+      "doubao-seed-code-preview-251028",
+      "doubao-seed-1-8-251228",
+      "deepseek-v3-2-251201",
+      "kimi-k2-5-260127",
+      "glm-4-7-251222",
+      "kimi-k2-thinking"
+    ],
+    "doubao_coding": [
+      "doubao-seed-code-preview-251028",
+      "ark-code-latest",
+      "doubao-seed-code",
+      "glm-4.7",
+      "kimi-k2-thinking",
+      "kimi-k2.5"
+    ],
+    "byteplus": [
+      "seed-1-8-251228",
+      "kimi-k2-5-260127",
+      "glm-4-7-251222",
+      "kimi-k2-thinking"
+    ],
+    "byteplus_coding": [
+      "ark-code-latest",
+      "doubao-seed-code",
+      "glm-4.7",
+      "kimi-k2-thinking",
+      "kimi-k2.5"
+    ],
+    "openrouter": [
+      "auto"
+    ],
+    "litellm": [
+      "claude-opus-4-6"
+    ],
+    "cloudflare_ai_gateway": [
+      "claude-sonnet-4-5"
+    ],
+    "vercel_ai_gateway_default_ref": [
+      "anthropic/claude-opus-4.6"
+    ],
+    "opencode_zen_static_fallback": [
+      "gpt-5.1-codex",
+      "claude-opus-4-6",
+      "claude-opus-4-5",
+      "gemini-3-pro",
+      "gpt-5.1-codex-mini",
+      "gpt-5.1",
+      "glm-4.7",
+      "gemini-3-flash",
+      "gpt-5.1-codex-max",
+      "gpt-5.2"
+    ],
+    "copilot_proxy_default": [
+      "gpt-5.2",
+      "gpt-5.2-codex",
+      "gpt-5.1",
+      "gpt-5.1-codex",
+      "gpt-5.1-codex-max",
+      "gpt-5-mini",
+      "claude-opus-4.6",
+      "claude-opus-4.5",
+      "claude-sonnet-4.5",
+      "claude-haiku-4.5",
+      "gemini-3-pro",
+      "gemini-3-flash",
+      "grok-code-fast-1"
+    ]
+  },
+  "providers": [
+    {
+      "providerGroup": "openai",
+      "label": "OpenAI",
+      "hint": "Codex OAuth + API key",
+      "authChoices": [
+        {
+          "id": "openai-codex",
+          "label": "OpenAI Codex (ChatGPT OAuth)",
+          "hint": null,
+          "preferredProvider": "openai-codex"
+        },
+        {
+          "id": "openai-api-key",
+          "label": "OpenAI API key",
+          "hint": null,
+          "preferredProvider": "openai"
+        }
+      ],
+      "providerConfigs": [
+        {
+          "providerId": "openai",
+          "authModes": [
+            "api_key"
+          ],
+          "envVars": [
+            "OPENAI_API_KEY"
+          ],
+          "defaultModelRef": "openai/gpt-5.1-codex",
+          "api": "implicit built-in provider",
+          "baseUrl": "built-in default (OpenAI)",
+          "modelCatalog": {
+            "type": "default_only",
+            "modelIds": [
+              "gpt-5.1-codex"
+            ]
+          }
+        },
+        {
+          "providerId": "openai-codex",
+          "authModes": [
+            "oauth"
+          ],
+          "defaultModelRef": "openai-codex/gpt-5.3-codex",
+          "api": "openai-codex oauth bridge",
+          "baseUrl": "managed by codex oauth client",
+          "modelCatalog": {
+            "type": "dynamic",
+            "note": "Resolved by OpenAI Codex account/auth."
+          }
+        }
+      ]
+    },
+    {
+      "providerGroup": "anthropic",
+      "label": "Anthropic",
+      "hint": "setup-token + API key",
+      "authChoices": [
+        {
+          "id": "token",
+          "label": "Anthropic token (paste setup-token)",
+          "hint": "run `claude setup-token` elsewhere, then paste the token here",
+          "preferredProvider": "anthropic"
+        },
+        {
+          "id": "apiKey",
+          "label": "Anthropic API key",
+          "hint": null,
+          "preferredProvider": "anthropic"
+        }
+      ],
+      "providerConfigs": [
+        {
+          "providerId": "anthropic",
+          "authModes": [
+            "token",
+            "api_key"
+          ],
+          "envVars": [
+            "ANTHROPIC_API_KEY"
+          ],
+          "defaultModelRef": "anthropic/claude-sonnet-4-6",
+          "api": "implicit built-in provider",
+          "baseUrl": "built-in default (Anthropic)",
+          "modelCatalog": {
+            "type": "default_only",
+            "modelIds": [
+              "claude-sonnet-4-6"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "providerGroup": "chutes",
+      "label": "Chutes",
+      "hint": "OAuth",
+      "authChoices": [
+        {
+          "id": "chutes",
+          "label": "Chutes (OAuth)",
+          "hint": null,
+          "preferredProvider": "chutes"
+        }
+      ],
+      "providerConfigs": [
+        {
+          "providerId": "chutes",
+          "authModes": [
+            "oauth"
+          ],
+          "defaultModelRef": null,
+          "api": "oauth provider (chutes-oauth)",
+          "baseUrl": "from chutes oauth settings",
+          "modelCatalog": {
+            "type": "dynamic",
+            "note": "No static model catalog in onboard flow."
+          }
+        }
+      ]
+    },
+    {
+      "providerGroup": "vllm",
+      "label": "vLLM",
+      "hint": "Local/self-hosted OpenAI-compatible",
+      "authChoices": [
+        {
+          "id": "vllm",
+          "label": "vLLM (custom URL + model)",
+          "hint": "Local/self-hosted OpenAI-compatible server",
+          "preferredProvider": "vllm"
+        }
+      ],
+      "providerConfigs": [
+        {
+          "providerId": "vllm",
+          "authModes": [
+            "api_key"
+          ],
+          "envVars": [
+            "VLLM_API_KEY"
+          ],
+          "defaultModelRef": "vllm/<user-input-model-id>",
+          "api": "openai-completions",
+          "baseUrl": "user input (default http://127.0.0.1:8000/v1)",
+          "modelCatalog": {
+            "type": "custom_single_model",
+            "modelIds": [
+              "<user-input-model-id>"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "providerGroup": "minimax",
+      "label": "MiniMax",
+      "hint": "M2.5 (recommended)",
+      "authChoices": [
+        {
+          "id": "minimax-portal",
+          "label": "MiniMax OAuth",
+          "hint": "Oauth plugin for MiniMax",
+          "preferredProvider": "minimax-portal"
+        },
+        {
+          "id": "minimax-api",
+          "label": "MiniMax M2.5",
+          "hint": null,
+          "preferredProvider": "minimax"
+        },
+        {
+          "id": "minimax-api-key-cn",
+          "label": "MiniMax M2.5 (CN)",
+          "hint": "China endpoint (api.minimaxi.com)",
+          "preferredProvider": "minimax-cn"
+        },
+        {
+          "id": "minimax-api-lightning",
+          "label": "MiniMax M2.5 Lightning",
+          "hint": "Faster, higher output cost",
+          "preferredProvider": "minimax"
+        }
+      ],
+      "providerConfigs": [
+        {
+          "providerId": "minimax",
+          "authModes": [
+            "api_key"
+          ],
+          "envVars": [
+            "MINIMAX_API_KEY"
+          ],
+          "defaultModelRef": "minimax/MiniMax-M2.5 or minimax/MiniMax-M2.5-Lightning",
+          "api": "anthropic-messages",
+          "baseUrl": "https://api.minimax.io/anthropic",
+          "modelCatalog": {
+            "type": "static",
+            "modelIds": [
+              "MiniMax-M2.1",
+              "MiniMax-M2.1-lightning",
+              "MiniMax-VL-01",
+              "MiniMax-M2.5",
+              "MiniMax-M2.5-Lightning"
+            ],
+            "onboardingCatalogIds": [
+              "MiniMax-M2.1",
+              "MiniMax-M2.1-lightning",
+              "MiniMax-M2.5",
+              "MiniMax-M2.5-Lightning"
+            ]
+          }
+        },
+        {
+          "providerId": "minimax-cn",
+          "authModes": [
+            "api_key"
+          ],
+          "envVars": [
+            "MINIMAX_API_KEY"
+          ],
+          "defaultModelRef": "minimax-cn/MiniMax-M2.5",
+          "api": "anthropic-messages",
+          "baseUrl": "https://api.minimaxi.com/anthropic",
+          "modelCatalog": {
+            "type": "onboarding_selected_model_plus_existing",
+            "typicalModelIds": [
+              "MiniMax-M2.5"
+            ]
+          }
+        },
+        {
+          "providerId": "minimax-portal",
+          "authModes": [
+            "oauth (device_code)"
+          ],
+          "defaultModelRef": "minimax-portal/MiniMax-M2.5",
+          "pluginId": "minimax-portal-auth",
+          "api": "anthropic-messages",
+          "baseUrl": "global: https://api.minimax.io/anthropic, cn: https://api.minimaxi.com/anthropic",
+          "modelCatalog": {
+            "type": "static",
+            "modelIds": [
+              "MiniMax-M2.1",
+              "MiniMax-M2.5"
+            ]
+          }
+        },
+        {
+          "providerId": "lmstudio (legacy minimax local mode)",
+          "authModes": [
+            "local"
+          ],
+          "defaultModelRef": "lmstudio/minimax-m2.1-gs32",
+          "api": "openai-responses",
+          "baseUrl": "http://127.0.0.1:1234/v1",
+          "modelCatalog": {
+            "type": "static",
+            "modelIds": [
+              "minimax-m2.1-gs32"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "providerGroup": "moonshot",
+      "label": "Moonshot AI (Kimi K2.5)",
+      "hint": "Kimi K2.5 + Kimi Coding",
+      "authChoices": [
+        {
+          "id": "moonshot-api-key",
+          "label": "Kimi API key (.ai)",
+          "hint": null,
+          "preferredProvider": "moonshot"
+        },
+        {
+          "id": "moonshot-api-key-cn",
+          "label": "Kimi API key (.cn)",
+          "hint": null,
+          "preferredProvider": "moonshot"
+        },
+        {
+          "id": "kimi-code-api-key",
+          "label": "Kimi Code API key (subscription)",
+          "hint": null,
+          "preferredProvider": "kimi-coding"
+        }
+      ],
+      "providerConfigs": [
+        {
+          "providerId": "moonshot",
+          "authModes": [
+            "api_key"
+          ],
+          "envVars": [
+            "MOONSHOT_API_KEY"
+          ],
+          "defaultModelRef": "moonshot/kimi-k2.5",
+          "api": "openai-completions",
+          "baseUrl": "global: https://api.moonshot.ai/v1, cn: https://api.moonshot.cn/v1",
+          "modelCatalog": {
+            "type": "static",
+            "modelIds": [
+              "kimi-k2.5"
+            ]
+          }
+        },
+        {
+          "providerId": "kimi-coding",
+          "authModes": [
+            "api_key"
+          ],
+          "envVars": [
+            "KIMI_API_KEY"
+          ],
+          "defaultModelRef": "kimi-coding/k2p5",
+          "api": "anthropic-messages",
+          "baseUrl": "https://api.kimi.com/coding/",
+          "modelCatalog": {
+            "type": "static",
+            "modelIds": [
+              "k2p5"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "providerGroup": "google",
+      "label": "Google",
+      "hint": "Gemini API key + OAuth",
+      "authChoices": [
+        {
+          "id": "gemini-api-key",
+          "label": "Google Gemini API key",
+          "hint": null,
+          "preferredProvider": "google"
+        },
+        {
+          "id": "google-gemini-cli",
+          "label": "Google Gemini CLI OAuth",
+          "hint": "Uses the bundled Gemini CLI auth plugin",
+          "preferredProvider": "google-gemini-cli"
+        }
+      ],
+      "providerConfigs": [
+        {
+          "providerId": "google",
+          "authModes": [
+            "api_key"
+          ],
+          "envVars": [
+            "GEMINI_API_KEY"
+          ],
+          "defaultModelRef": "google/gemini-3-pro-preview",
+          "api": "implicit built-in google provider",
+          "baseUrl": "google client default",
+          "modelCatalog": {
+            "type": "default_only",
+            "modelIds": [
+              "gemini-3-pro-preview"
+            ]
+          }
+        },
+        {
+          "providerId": "google-gemini-cli",
+          "authModes": [
+            "oauth"
+          ],
+          "envVars": [
+            "OPENCLAW_GEMINI_OAUTH_CLIENT_ID",
+            "OPENCLAW_GEMINI_OAUTH_CLIENT_SECRET",
+            "GEMINI_CLI_OAUTH_CLIENT_ID",
+            "GEMINI_CLI_OAUTH_CLIENT_SECRET"
+          ],
+          "defaultModelRef": "google-gemini-cli/gemini-3-pro-preview",
+          "pluginId": "google-gemini-cli-auth",
+          "api": "plugin provider",
+          "baseUrl": "managed by plugin oauth flow",
+          "modelCatalog": {
+            "type": "default_only",
+            "modelIds": [
+              "gemini-3-pro-preview"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "providerGroup": "xai",
+      "label": "xAI (Grok)",
+      "hint": "API key",
+      "authChoices": [
+        {
+          "id": "xai-api-key",
+          "label": "xAI API key",
+          "hint": null,
+          "preferredProvider": "xai"
+        }
+      ],
+      "providerConfigs": [
+        {
+          "providerId": "xai",
+          "authModes": [
+            "api_key"
+          ],
+          "envVars": [
+            "XAI_API_KEY"
+          ],
+          "defaultModelRef": "xai/grok-4",
+          "api": "openai-completions",
+          "baseUrl": "https://api.x.ai/v1",
+          "modelCatalog": {
+            "type": "static",
+            "modelIds": [
+              "grok-4"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "providerGroup": "mistral",
+      "label": "Mistral AI",
+      "hint": "API key",
+      "authChoices": [
+        {
+          "id": "mistral-api-key",
+          "label": "Mistral API key",
+          "hint": null,
+          "preferredProvider": "mistral"
+        }
+      ],
+      "providerConfigs": [
+        {
+          "providerId": "mistral",
+          "authModes": [
+            "api_key"
+          ],
+          "envVars": [
+            "MISTRAL_API_KEY"
+          ],
+          "defaultModelRef": "mistral/mistral-large-latest",
+          "api": "openai-completions",
+          "baseUrl": "https://api.mistral.ai/v1",
+          "modelCatalog": {
+            "type": "static",
+            "modelIds": [
+              "mistral-large-latest"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "providerGroup": "volcengine",
+      "label": "Volcano Engine",
+      "hint": "API key",
+      "authChoices": [
+        {
+          "id": "volcengine-api-key",
+          "label": "Volcano Engine API key",
+          "hint": null,
+          "preferredProvider": "volcengine"
+        }
+      ],
+      "providerConfigs": [
+        {
+          "providerId": "volcengine",
+          "authModes": [
+            "api_key"
+          ],
+          "envVars": [
+            "VOLCANO_ENGINE_API_KEY"
+          ],
+          "defaultModelRef": "volcengine-plan/ark-code-latest",
+          "api": "openai-completions",
+          "baseUrl": "https://ark.cn-beijing.volces.com/api/v3",
+          "modelCatalog": {
+            "type": "static",
+            "modelIds": [
+              "doubao-seed-code-preview-251028",
+              "doubao-seed-1-8-251228",
+              "deepseek-v3-2-251201",
+              "kimi-k2-5-260127",
+              "glm-4-7-251222",
+              "kimi-k2-thinking"
+            ]
+          }
+        },
+        {
+          "providerId": "volcengine-plan",
+          "authModes": [
+            "api_key (shared with volcengine)"
+          ],
+          "envVars": [
+            "VOLCANO_ENGINE_API_KEY"
+          ],
+          "defaultModelRef": "volcengine-plan/ark-code-latest",
+          "api": "openai-completions",
+          "baseUrl": "https://ark.cn-beijing.volces.com/api/coding/v3",
+          "modelCatalog": {
+            "type": "static",
+            "modelIds": [
+              "doubao-seed-code-preview-251028",
+              "ark-code-latest",
+              "doubao-seed-code",
+              "glm-4.7",
+              "kimi-k2-thinking",
+              "kimi-k2.5"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "providerGroup": "byteplus",
+      "label": "BytePlus",
+      "hint": "API key",
+      "authChoices": [
+        {
+          "id": "byteplus-api-key",
+          "label": "BytePlus API key",
+          "hint": null,
+          "preferredProvider": "byteplus"
+        }
+      ],
+      "providerConfigs": [
+        {
+          "providerId": "byteplus",
+          "authModes": [
+            "api_key"
+          ],
+          "envVars": [
+            "BYTEPLUS_API_KEY"
+          ],
+          "defaultModelRef": "byteplus-plan/ark-code-latest",
+          "api": "openai-completions",
+          "baseUrl": "https://ark.ap-southeast.bytepluses.com/api/v3",
+          "modelCatalog": {
+            "type": "static",
+            "modelIds": [
+              "seed-1-8-251228",
+              "kimi-k2-5-260127",
+              "glm-4-7-251222",
+              "kimi-k2-thinking"
+            ]
+          }
+        },
+        {
+          "providerId": "byteplus-plan",
+          "authModes": [
+            "api_key (shared with byteplus)"
+          ],
+          "envVars": [
+            "BYTEPLUS_API_KEY"
+          ],
+          "defaultModelRef": "byteplus-plan/ark-code-latest",
+          "api": "openai-completions",
+          "baseUrl": "https://ark.ap-southeast.bytepluses.com/api/coding/v3",
+          "modelCatalog": {
+            "type": "static",
+            "modelIds": [
+              "ark-code-latest",
+              "doubao-seed-code",
+              "glm-4.7",
+              "kimi-k2-thinking",
+              "kimi-k2.5"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "providerGroup": "openrouter",
+      "label": "OpenRouter",
+      "hint": "API key",
+      "authChoices": [
+        {
+          "id": "openrouter-api-key",
+          "label": "OpenRouter API key",
+          "hint": null,
+          "preferredProvider": "openrouter"
+        }
+      ],
+      "providerConfigs": [
+        {
+          "providerId": "openrouter",
+          "authModes": [
+            "api_key"
+          ],
+          "envVars": [
+            "OPENROUTER_API_KEY"
+          ],
+          "defaultModelRef": "openrouter/auto",
+          "api": "openai-completions",
+          "baseUrl": "https://openrouter.ai/api/v1",
+          "modelCatalog": {
+            "type": "static",
+            "modelIds": [
+              "auto"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "providerGroup": "kilocode",
+      "label": "Kilo Gateway",
+      "hint": "API key (OpenRouter-compatible)",
+      "authChoices": [
+        {
+          "id": "kilocode-api-key",
+          "label": "Kilo Gateway API key",
+          "hint": null,
+          "preferredProvider": "kilocode"
+        }
+      ],
+      "providerConfigs": [
+        {
+          "providerId": "kilocode",
+          "authModes": [
+            "api_key"
+          ],
+          "envVars": [
+            "KILOCODE_API_KEY"
+          ],
+          "defaultModelRef": "kilocode/anthropic/claude-opus-4.6",
+          "api": "openai-completions",
+          "baseUrl": "https://api.kilo.ai/api/gateway/",
+          "modelCatalog": {
+            "type": "static",
+            "modelIds": [
+              "anthropic/claude-opus-4.6",
+              "z-ai/glm-5:free",
+              "minimax/minimax-m2.5:free",
+              "anthropic/claude-sonnet-4.5",
+              "openai/gpt-5.2",
+              "google/gemini-3-pro-preview",
+              "google/gemini-3-flash-preview",
+              "x-ai/grok-code-fast-1",
+              "moonshotai/kimi-k2.5"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "providerGroup": "qwen",
+      "label": "Qwen",
+      "hint": "OAuth",
+      "authChoices": [
+        {
+          "id": "qwen-portal",
+          "label": "Qwen OAuth",
+          "hint": null,
+          "preferredProvider": "qwen-portal"
+        }
+      ],
+      "providerConfigs": [
+        {
+          "providerId": "qwen-portal",
+          "authModes": [
+            "oauth (device_code)"
+          ],
+          "defaultModelRef": "qwen-portal/coder-model",
+          "pluginId": "qwen-portal-auth",
+          "api": "openai-completions",
+          "baseUrl": "https://portal.qwen.ai/v1 (default)",
+          "modelCatalog": {
+            "type": "static",
+            "modelIds": [
+              "coder-model",
+              "vision-model"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "providerGroup": "zai",
+      "label": "Z.AI",
+      "hint": "GLM Coding Plan / Global / CN",
+      "authChoices": [
+        {
+          "id": "zai-coding-global",
+          "label": "Coding-Plan-Global",
+          "hint": "GLM Coding Plan Global (api.z.ai)",
+          "preferredProvider": "zai"
+        },
+        {
+          "id": "zai-coding-cn",
+          "label": "Coding-Plan-CN",
+          "hint": "GLM Coding Plan CN (open.bigmodel.cn)",
+          "preferredProvider": "zai"
+        },
+        {
+          "id": "zai-global",
+          "label": "Global",
+          "hint": "Z.AI Global (api.z.ai)",
+          "preferredProvider": "zai"
+        },
+        {
+          "id": "zai-cn",
+          "label": "CN",
+          "hint": "Z.AI CN (open.bigmodel.cn)",
+          "preferredProvider": "zai"
+        }
+      ],
+      "providerConfigs": [
+        {
+          "providerId": "zai",
+          "authModes": [
+            "api_key"
+          ],
+          "envVars": [
+            "ZAI_API_KEY"
+          ],
+          "defaultModelRef": "zai/glm-5 (or detected model)",
+          "api": "openai-completions",
+          "baseUrl": "global/cn/coding-global/coding-cn endpoint selectable",
+          "modelCatalog": {
+            "type": "static",
+            "modelIds": [
+              "glm-5",
+              "glm-4.7",
+              "glm-4.7-flash",
+              "glm-4.7-flashx"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "providerGroup": "qianfan",
+      "label": "Qianfan",
+      "hint": "API key",
+      "authChoices": [
+        {
+          "id": "qianfan-api-key",
+          "label": "QIANFAN API key",
+          "hint": null,
+          "preferredProvider": "qianfan"
+        }
+      ],
+      "providerConfigs": [
+        {
+          "providerId": "qianfan",
+          "authModes": [
+            "api_key"
+          ],
+          "envVars": [
+            "QIANFAN_API_KEY"
+          ],
+          "defaultModelRef": "qianfan/deepseek-v3.2",
+          "api": "openai-completions",
+          "baseUrl": "https://qianfan.baidubce.com/v2",
+          "modelCatalog": {
+            "type": "static",
+            "modelIds": [
+              "deepseek-v3.2",
+              "ernie-5.0-thinking-preview"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "providerGroup": "copilot",
+      "label": "Copilot",
+      "hint": "GitHub + local proxy",
+      "authChoices": [
+        {
+          "id": "github-copilot",
+          "label": "GitHub Copilot (GitHub device login)",
+          "hint": "Uses GitHub device flow",
+          "preferredProvider": "github-copilot"
+        },
+        {
+          "id": "copilot-proxy",
+          "label": "Copilot Proxy (local)",
+          "hint": "Local proxy for VS Code Copilot models",
+          "preferredProvider": "copilot-proxy"
+        }
+      ],
+      "providerConfigs": [
+        {
+          "providerId": "github-copilot",
+          "authModes": [
+            "token (github device login)"
+          ],
+          "defaultModelRef": "github-copilot/gpt-4o",
+          "api": "github-copilot provider",
+          "baseUrl": "managed by copilot runtime",
+          "modelCatalog": {
+            "type": "default_only",
+            "modelIds": [
+              "gpt-4o"
+            ]
+          }
+        },
+        {
+          "providerId": "copilot-proxy",
+          "authModes": [
+            "custom local plugin"
+          ],
+          "defaultModelRef": "copilot-proxy/<first-selected-model-id>",
+          "pluginId": "copilot-proxy",
+          "api": "openai-completions",
+          "baseUrl": "user input (default http://localhost:3000/v1)",
+          "modelCatalog": {
+            "type": "user_selectable",
+            "defaultModelIds": [
+              "gpt-5.2",
+              "gpt-5.2-codex",
+              "gpt-5.1",
+              "gpt-5.1-codex",
+              "gpt-5.1-codex-max",
+              "gpt-5-mini",
+              "claude-opus-4.6",
+              "claude-opus-4.5",
+              "claude-sonnet-4.5",
+              "claude-haiku-4.5",
+              "gemini-3-pro",
+              "gemini-3-flash",
+              "grok-code-fast-1"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "providerGroup": "ai-gateway",
+      "label": "Vercel AI Gateway",
+      "hint": "API key",
+      "authChoices": [
+        {
+          "id": "ai-gateway-api-key",
+          "label": "Vercel AI Gateway API key",
+          "hint": null,
+          "preferredProvider": "vercel-ai-gateway"
+        }
+      ],
+      "providerConfigs": [
+        {
+          "providerId": "vercel-ai-gateway",
+          "authModes": [
+            "api_key"
+          ],
+          "envVars": [
+            "AI_GATEWAY_API_KEY"
+          ],
+          "defaultModelRef": "vercel-ai-gateway/anthropic/claude-opus-4.6",
+          "api": "implicit vercel ai gateway provider",
+          "baseUrl": "gateway-managed",
+          "modelCatalog": {
+            "type": "default_only",
+            "modelIds": [
+              "anthropic/claude-opus-4.6"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "providerGroup": "opencode-zen",
+      "label": "OpenCode Zen",
+      "hint": "API key",
+      "authChoices": [
+        {
+          "id": "opencode-zen",
+          "label": "OpenCode Zen (multi-model proxy)",
+          "hint": "Claude, GPT, Gemini via opencode.ai/zen",
+          "preferredProvider": "opencode"
+        }
+      ],
+      "providerConfigs": [
+        {
+          "providerId": "opencode",
+          "authModes": [
+            "api_key"
+          ],
+          "envVars": [
+            "OPENCODE_API_KEY"
+          ],
+          "defaultModelRef": "opencode/claude-opus-4-6",
+          "api": "dynamic by model family (openai-responses/anthropic-messages/google-generative-ai/openai-completions)",
+          "baseUrl": "https://opencode.ai/zen/v1",
+          "modelCatalog": {
+            "type": "dynamic_with_static_fallback",
+            "staticFallbackModelIds": [
+              "gpt-5.1-codex",
+              "claude-opus-4-6",
+              "claude-opus-4-5",
+              "gemini-3-pro",
+              "gpt-5.1-codex-mini",
+              "gpt-5.1",
+              "glm-4.7",
+              "gemini-3-flash",
+              "gpt-5.1-codex-max",
+              "gpt-5.2"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "providerGroup": "xiaomi",
+      "label": "Xiaomi",
+      "hint": "API key",
+      "authChoices": [
+        {
+          "id": "xiaomi-api-key",
+          "label": "Xiaomi API key",
+          "hint": null,
+          "preferredProvider": "xiaomi"
+        }
+      ],
+      "providerConfigs": [
+        {
+          "providerId": "xiaomi",
+          "authModes": [
+            "api_key"
+          ],
+          "envVars": [
+            "XIAOMI_API_KEY"
+          ],
+          "defaultModelRef": "xiaomi/mimo-v2-flash",
+          "api": "anthropic-messages",
+          "baseUrl": "https://api.xiaomimimo.com/anthropic",
+          "modelCatalog": {
+            "type": "static",
+            "modelIds": [
+              "mimo-v2-flash"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "providerGroup": "synthetic",
+      "label": "Synthetic",
+      "hint": "Anthropic-compatible (multi-model)",
+      "authChoices": [
+        {
+          "id": "synthetic-api-key",
+          "label": "Synthetic API key",
+          "hint": null,
+          "preferredProvider": "synthetic"
+        }
+      ],
+      "providerConfigs": [
+        {
+          "providerId": "synthetic",
+          "authModes": [
+            "api_key"
+          ],
+          "envVars": [
+            "SYNTHETIC_API_KEY"
+          ],
+          "defaultModelRef": "synthetic/hf:MiniMaxAI/MiniMax-M2.1",
+          "api": "anthropic-messages",
+          "baseUrl": "https://api.synthetic.new/anthropic",
+          "modelCatalog": {
+            "type": "static",
+            "modelIds": [
+              "hf:MiniMaxAI/MiniMax-M2.1",
+              "hf:moonshotai/Kimi-K2-Thinking",
+              "hf:zai-org/GLM-4.7",
+              "hf:deepseek-ai/DeepSeek-R1-0528",
+              "hf:deepseek-ai/DeepSeek-V3-0324",
+              "hf:deepseek-ai/DeepSeek-V3.1",
+              "hf:deepseek-ai/DeepSeek-V3.1-Terminus",
+              "hf:deepseek-ai/DeepSeek-V3.2",
+              "hf:meta-llama/Llama-3.3-70B-Instruct",
+              "hf:meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+              "hf:moonshotai/Kimi-K2-Instruct-0905",
+              "hf:moonshotai/Kimi-K2.5",
+              "hf:openai/gpt-oss-120b",
+              "hf:Qwen/Qwen3-235B-A22B-Instruct-2507",
+              "hf:Qwen/Qwen3-Coder-480B-A35B-Instruct",
+              "hf:Qwen/Qwen3-VL-235B-A22B-Instruct",
+              "hf:zai-org/GLM-4.5",
+              "hf:zai-org/GLM-4.6",
+              "hf:zai-org/GLM-5",
+              "hf:deepseek-ai/DeepSeek-V3",
+              "hf:Qwen/Qwen3-235B-A22B-Thinking-2507"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "providerGroup": "together",
+      "label": "Together AI",
+      "hint": "API key",
+      "authChoices": [
+        {
+          "id": "together-api-key",
+          "label": "Together AI API key",
+          "hint": "Access to Llama, DeepSeek, Qwen, and more open models",
+          "preferredProvider": "together"
+        }
+      ],
+      "providerConfigs": [
+        {
+          "providerId": "together",
+          "authModes": [
+            "api_key"
+          ],
+          "envVars": [
+            "TOGETHER_API_KEY"
+          ],
+          "defaultModelRef": "together/moonshotai/Kimi-K2.5",
+          "api": "openai-completions",
+          "baseUrl": "https://api.together.xyz/v1",
+          "modelCatalog": {
+            "type": "static",
+            "modelIds": [
+              "zai-org/GLM-4.7",
+              "moonshotai/Kimi-K2.5",
+              "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+              "meta-llama/Llama-4-Scout-17B-16E-Instruct",
+              "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+              "deepseek-ai/DeepSeek-V3.1",
+              "deepseek-ai/DeepSeek-R1",
+              "moonshotai/Kimi-K2-Instruct-0905"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "providerGroup": "huggingface",
+      "label": "Hugging Face",
+      "hint": "Inference API (HF token)",
+      "authChoices": [
+        {
+          "id": "huggingface-api-key",
+          "label": "Hugging Face API key (HF token)",
+          "hint": "Inference Providers — OpenAI-compatible chat",
+          "preferredProvider": "huggingface"
+        }
+      ],
+      "providerConfigs": [
+        {
+          "providerId": "huggingface",
+          "authModes": [
+            "api_key"
+          ],
+          "envVars": [
+            "HUGGINGFACE_API_KEY"
+          ],
+          "defaultModelRef": "huggingface/deepseek-ai/DeepSeek-R1 (selectable at onboarding)",
+          "api": "openai-completions",
+          "baseUrl": "https://router.huggingface.co/v1",
+          "modelCatalog": {
+            "type": "dynamic_with_static_fallback",
+            "staticFallbackModelIds": [
+              "deepseek-ai/DeepSeek-R1",
+              "deepseek-ai/DeepSeek-V3.1",
+              "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+              "openai/gpt-oss-120b"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "providerGroup": "venice",
+      "label": "Venice AI",
+      "hint": "Privacy-focused (uncensored models)",
+      "authChoices": [
+        {
+          "id": "venice-api-key",
+          "label": "Venice API key",
+          "hint": "Privacy-focused inference (uncensored models)",
+          "preferredProvider": "venice"
+        }
+      ],
+      "providerConfigs": [
+        {
+          "providerId": "venice",
+          "authModes": [
+            "api_key"
+          ],
+          "envVars": [
+            "VENICE_API_KEY"
+          ],
+          "defaultModelRef": "venice/llama-3.3-70b",
+          "api": "openai-completions",
+          "baseUrl": "https://api.venice.ai/api/v1",
+          "modelCatalog": {
+            "type": "dynamic_with_static_fallback",
+            "staticFallbackModelIds": [
+              "llama-3.3-70b",
+              "llama-3.2-3b",
+              "hermes-3-llama-3.1-405b",
+              "qwen3-235b-a22b-thinking-2507",
+              "qwen3-235b-a22b-instruct-2507",
+              "qwen3-coder-480b-a35b-instruct",
+              "qwen3-next-80b",
+              "qwen3-vl-235b-a22b",
+              "qwen3-4b",
+              "deepseek-v3.2",
+              "venice-uncensored",
+              "mistral-31-24b",
+              "google-gemma-3-27b-it",
+              "openai-gpt-oss-120b",
+              "zai-org-glm-4.7",
+              "claude-opus-45",
+              "claude-sonnet-45",
+              "openai-gpt-52",
+              "openai-gpt-52-codex",
+              "gemini-3-pro-preview",
+              "gemini-3-flash-preview",
+              "grok-41-fast",
+              "grok-code-fast-1",
+              "kimi-k2-thinking",
+              "minimax-m21"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "providerGroup": "litellm",
+      "label": "LiteLLM",
+      "hint": "Unified LLM gateway (100+ providers)",
+      "authChoices": [
+        {
+          "id": "litellm-api-key",
+          "label": "LiteLLM API key",
+          "hint": "Unified gateway for 100+ LLM providers",
+          "preferredProvider": "litellm"
+        }
+      ],
+      "providerConfigs": [
+        {
+          "providerId": "litellm",
+          "authModes": [
+            "api_key"
+          ],
+          "envVars": [
+            "LITELLM_API_KEY"
+          ],
+          "defaultModelRef": "litellm/claude-opus-4-6",
+          "api": "openai-completions",
+          "baseUrl": "http://localhost:4000 (default)",
+          "modelCatalog": {
+            "type": "static",
+            "modelIds": [
+              "claude-opus-4-6"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "providerGroup": "cloudflare-ai-gateway",
+      "label": "Cloudflare AI Gateway",
+      "hint": "Account ID + Gateway ID + API key",
+      "authChoices": [
+        {
+          "id": "cloudflare-ai-gateway-api-key",
+          "label": "Cloudflare AI Gateway",
+          "hint": "Account ID + Gateway ID + API key",
+          "preferredProvider": "cloudflare-ai-gateway"
+        }
+      ],
+      "providerConfigs": [
+        {
+          "providerId": "cloudflare-ai-gateway",
+          "authModes": [
+            "api_key"
+          ],
+          "envVars": [
+            "CLOUDFLARE_AI_GATEWAY_API_KEY"
+          ],
+          "defaultModelRef": "cloudflare-ai-gateway/claude-sonnet-4-5",
+          "api": "anthropic-messages",
+          "baseUrl": "https://gateway.ai.cloudflare.com/v1/<accountId>/<gatewayId>/anthropic",
+          "modelCatalog": {
+            "type": "static",
+            "modelIds": [
+              "claude-sonnet-4-5"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "providerGroup": "custom",
+      "label": "Custom Provider",
+      "hint": "Any OpenAI or Anthropic compatible endpoint",
+      "authChoices": [
+        {
+          "id": "custom-api-key",
+          "label": "Custom Provider",
+          "hint": null,
+          "preferredProvider": "custom"
+        }
+      ],
+      "providerConfigs": [
+        {
+          "providerId": "custom-<endpoint>",
+          "authModes": [
+            "api_key"
+          ],
+          "envVars": [
+            "CUSTOM_API_KEY (or explicit ref)"
+          ],
+          "defaultModelRef": "custom-<endpoint>/<user-model-id>",
+          "api": "openai-completions or anthropic-messages (auto-detect supported)",
+          "baseUrl": "user input",
+          "modelCatalog": {
+            "type": "user_defined",
+            "modelIds": [
+              "<user-model-id>"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
