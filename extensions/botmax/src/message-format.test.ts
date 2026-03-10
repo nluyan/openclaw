@@ -24,6 +24,9 @@ describe("botmax message format", () => {
       kind: "chat",
       senderId: "telegram:123",
       body: "hi",
+      chatType: "direct",
+      chatId: undefined,
+      replyTargetId: "telegram:123",
       requestId: "req-1",
     });
   });
@@ -48,7 +51,37 @@ describe("botmax message format", () => {
       senderId: "telegram:123",
       command: "openclaw devices list",
       timeoutMs: 9000,
+      chatType: "direct",
+      chatId: undefined,
+      replyTargetId: "telegram:123",
       requestId: 42,
+    });
+  });
+
+  it("parses group chat metadata and routes replies to chatId", () => {
+    const frame = JSON.stringify({
+      jsonrpc: "2.0",
+      method: "botmax.transport",
+      params: {
+        v: 2,
+        type: "chat.message",
+        from: "telegram:123",
+        senderId: "telegram:123",
+        to: "openclaw:botmax",
+        text: "group hi",
+        chatType: "group",
+        chatId: "telegram:-100001",
+      },
+    });
+    const parsed = parseBotmaxInboundText(frame);
+    expect(parsed).toEqual({
+      kind: "chat",
+      senderId: "telegram:123",
+      body: "group hi",
+      chatType: "group",
+      chatId: "telegram:-100001",
+      replyTargetId: "telegram:-100001",
+      requestId: undefined,
     });
   });
 

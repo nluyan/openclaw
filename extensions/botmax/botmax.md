@@ -21,7 +21,10 @@
     "type": "chat.message",
     "from": "telegram:123456",
     "to": "openclaw:botmax",
-    "text": "hello"
+    "text": "hello",
+    "chatType": "group",
+    "chatId": "telegram:-1001234567890",
+    "senderId": "telegram:123456"
   }
 }
 ```
@@ -38,7 +41,10 @@
     "from": "telegram:123456",
     "to": "openclaw:botmax",
     "command": "openclaw devices list",
-    "timeoutMs": 10000
+    "timeoutMs": 10000,
+    "chatType": "group",
+    "chatId": "telegram:-1001234567890",
+    "senderId": "telegram:123456"
   }
 }
 ```
@@ -75,7 +81,8 @@
 - BotKeeper <-> OpenClaw only accepts JSON-RPC `botmax.transport` frames (`params.v=2`).
 - OpenClaw accepts `chat.message` and `command.exec`.
 - BotKeeper consumes `chat.message` and `command.result`.
-- Replies always target the original sender from `params.from`.
+- For `chatType=group`, OpenClaw routes and replies by `chatId` (not by `from`).
+- For `chatType=direct`, OpenClaw routes and replies by `from`.
 
 ## Troubleshooting Reconnect Loops
 - Raw inbound/outbound frames are logged as `botmax[<accountId>] inbound raw: ...` and `botmax[<accountId>] outbound raw: ...`.

@@ -13,18 +13,24 @@ import type { ResolvedBotmaxAccount } from "./types.js";
 export async function handleBotmaxInbound(params: {
   senderId: string;
   body: string;
+  chatType: "direct" | "group";
+  chatId?: string;
+  replyTargetId: string;
   requestId?: string | number | null;
   account: ResolvedBotmaxAccount;
   config: OpenClawConfig;
   runtime: RuntimeEnv;
   statusSink?: (patch: { lastInboundAt?: number; lastOutboundAt?: number }) => void;
 }): Promise<void> {
-  const { senderId, body, requestId, account, config, runtime, statusSink } = params;
+  const { senderId, body, chatType, chatId, replyTargetId, requestId, account, config, runtime, statusSink } = params;
   const core = getBotmaxRuntime();
   const rawBody = body.trim();
   if (!rawBody) {
     return;
   }
+  const isGroup = chatType === "group";
+  const normalizedChatId = chatId?.trim() || (isGroup ? replyTargetId : undefined);
+  const routePeerId = isGroup ? normalizedChatId || replyTargetId : senderId;
 
   statusSink?.({ lastInboundAt: Date.now() });
 
@@ -33,8 +39,8 @@ export async function handleBotmaxInbound(params: {
     channel: "botmax",
     accountId: account.accountId,
     peer: {
-      kind: "direct",
-      id: senderId,
+      kind: isGroup ? "group" : "direct",
+      id: routePeerId,
     },
   });
 
@@ -49,7 +55,7 @@ export async function handleBotmaxInbound(params: {
 
   const envelopeBody = core.channel.reply.formatAgentEnvelope({
     channel: "Botmax",
-    from: senderId,
+    from: isGroup ? senderId : routePeerId,
     timestamp: Date.now(),
     previousTimestamp,
     envelope: envelopeOptions,
@@ -62,13 +68,14 @@ export async function handleBotmaxInbound(params: {
     RawBody: rawBody,
     CommandBody: rawBody,
     From: senderId,
-    To: senderId,
+    To: replyTargetId,
     SessionKey: route.sessionKey,
     AccountId: route.accountId,
-    ChatType: "direct",
-    ConversationLabel: senderId,
+    ChatType: isGroup ? "group" : "direct",
+    ConversationLabel: routePeerId,
     SenderName: senderId,
     SenderId: senderId,
+    GroupSubject: isGroup ? routePeerId : undefined,
     Provider: "botmax",
     Surface: "botmax",
     Timestamp: Date.now(),
@@ -115,7 +122,7 @@ export async function handleBotmaxInbound(params: {
       if (!chunk) {
         continue;
       }
-      await sendBotmaxText(account.accountId, senderId, chunk, { requestId });
+      await sendBotmaxText(account.accountId, replyTargetId, chunk, { requestId });
       outboundDelivered += 1;
     }
   });
@@ -140,11 +147,11 @@ export async function handleBotmaxInbound(params: {
     try {
       if (outboundDelivered === 0) {
         runtime.log?.(
-          `botmax[${account.accountId}] no outbound reply for sender ${senderId}`,
+          `botmax[${account.accountId}] no outbound reply for sender ${senderId} (target=${replyTargetId})`,
         );
       }
       if (account.doneToken !== null) {
-        await sendBotmaxText(account.accountId, senderId, account.doneToken, { requestId });
+        await sendBotmaxText(account.accountId, replyTargetId, account.doneToken, { requestId });
       }
     } finally {
       releaseHeartbeat();

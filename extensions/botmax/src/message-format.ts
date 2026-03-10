@@ -6,8 +6,11 @@ const BOTMAX_TRANSPORT_VERSION = 2;
 const CHAT_MESSAGE_TYPE = "chat.message";
 const COMMAND_EXEC_TYPE = "command.exec";
 const COMMAND_RESULT_TYPE = "command.result";
+const CHAT_TYPE_DIRECT = "direct";
+const CHAT_TYPE_GROUP = "group";
 
 type JsonRpcId = string | number | null;
+type BotmaxChatType = typeof CHAT_TYPE_DIRECT | typeof CHAT_TYPE_GROUP;
 
 type BotmaxTransportChatMessage = {
   v: number;
@@ -15,6 +18,9 @@ type BotmaxTransportChatMessage = {
   from: string;
   to: string;
   text: string;
+  chatType?: BotmaxChatType;
+  chatId?: string;
+  senderId?: string;
 };
 
 type BotmaxTransportCommandExec = {
@@ -24,6 +30,9 @@ type BotmaxTransportCommandExec = {
   to?: string;
   command: string;
   timeoutMs?: number;
+  chatType?: BotmaxChatType;
+  chatId?: string;
+  senderId?: string;
 };
 
 type BotmaxTransportCommandResult = {
@@ -55,6 +64,9 @@ export type BotmaxInboundMessage =
       kind: "chat";
       senderId: string;
       body: string;
+      chatType: BotmaxChatType;
+      chatId?: string;
+      replyTargetId: string;
       requestId?: JsonRpcId;
     }
   | {
@@ -62,6 +74,9 @@ export type BotmaxInboundMessage =
       senderId: string;
       command: string;
       timeoutMs?: number;
+      chatType: BotmaxChatType;
+      chatId?: string;
+      replyTargetId: string;
       requestId?: JsonRpcId;
     };
 
@@ -80,6 +95,13 @@ function normalizeJsonRpcId(value: unknown): JsonRpcId | undefined {
     return value;
   }
   return undefined;
+}
+
+function normalizeChatType(value: unknown): BotmaxChatType {
+  if (typeof value !== "string") {
+    return CHAT_TYPE_DIRECT;
+  }
+  return value.trim().toLowerCase() === CHAT_TYPE_GROUP ? CHAT_TYPE_GROUP : CHAT_TYPE_DIRECT;
 }
 
 function parseJsonRpcMessage(trimmed: string): BotmaxInboundMessage | null {
@@ -103,10 +125,20 @@ function parseJsonRpcMessage(trimmed: string): BotmaxInboundMessage | null {
   if (params.v !== BOTMAX_TRANSPORT_VERSION) {
     return null;
   }
-  const senderId = typeof params.from === "string" ? params.from.trim() : "";
+  const senderIdRaw =
+    typeof params.senderId === "string" && params.senderId.trim()
+      ? params.senderId.trim()
+      : typeof params.from === "string"
+        ? params.from.trim()
+        : "";
+  const senderId = senderIdRaw;
   if (!senderId) {
     return null;
   }
+  const chatType = normalizeChatType(params.chatType);
+  const chatId =
+    typeof params.chatId === "string" && params.chatId.trim() ? params.chatId.trim() : undefined;
+  const replyTargetId = chatType === CHAT_TYPE_GROUP && chatId ? chatId : senderId;
   const requestId = normalizeJsonRpcId(frame.id);
   const type = typeof params.type === "string" ? params.type.trim() : "";
 
@@ -119,6 +151,9 @@ function parseJsonRpcMessage(trimmed: string): BotmaxInboundMessage | null {
       kind: "chat",
       senderId,
       body,
+      chatType,
+      chatId,
+      replyTargetId,
       requestId,
     };
   }
@@ -137,6 +172,9 @@ function parseJsonRpcMessage(trimmed: string): BotmaxInboundMessage | null {
       senderId,
       command,
       timeoutMs,
+      chatType,
+      chatId,
+      replyTargetId,
       requestId,
     };
   }

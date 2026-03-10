@@ -186,6 +186,9 @@ export function monitorBotmaxAccount(options: BotmaxMonitorOptions): { stop: () 
             void handleBotmaxInbound({
               senderId: inbound.senderId,
               body: inbound.body,
+              chatType: inbound.chatType,
+              chatId: inbound.chatId,
+              replyTargetId: inbound.replyTargetId,
               requestId: inbound.requestId,
               account,
               config,
@@ -206,7 +209,7 @@ export function monitorBotmaxAccount(options: BotmaxMonitorOptions): { stop: () 
               .then(async (result) => {
                 await sendBotmaxCommandResult({
                   accountId: account.accountId,
-                  recipientId: inbound.senderId,
+                  recipientId: inbound.replyTargetId,
                   command: inbound.command,
                   method: result.method,
                   ok: result.ok,
@@ -222,7 +225,7 @@ export function monitorBotmaxAccount(options: BotmaxMonitorOptions): { stop: () 
                 try {
                   await sendBotmaxCommandResult({
                     accountId: account.accountId,
-                    recipientId: inbound.senderId,
+                    recipientId: inbound.replyTargetId,
                     command: inbound.command,
                     ok: false,
                     output: err instanceof Error ? err.message : String(err),

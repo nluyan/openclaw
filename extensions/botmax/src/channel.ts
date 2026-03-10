@@ -39,7 +39,7 @@ export const botmaxPlugin: ChannelPlugin<ResolvedBotmaxAccount> = {
     order: 95,
   },
   capabilities: {
-    chatTypes: ["direct"],
+    chatTypes: ["direct", "group"],
     media: false,
     blockStreaming: true,
   },
