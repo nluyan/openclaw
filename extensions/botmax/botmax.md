@@ -5,12 +5,77 @@
 - Query parameters such as `botid`, and `token` should be appended directly to `BOTMAX_SERVER` when needed.
 - BotKeeper routes inbound WebSocket text to the corresponding channel (for example, Telegram via `telegram:<userId>`).
 
-## Message Format
-- **Inbound to OpenClaw:** `[[[sender_id]]]this is a message`
-- **Outbound from OpenClaw:** `[[[recipient_id]]]this is a message`
-- Replies always use the original `sender_id` as `recipient_id`.
-- If an outbound `recipient_id` omits a channel prefix (e.g. `telegram:`), Botmax reuses the last observed sender prefix for that account.
-- Proactive assistant messages (not tied to a specific inbound message) use `recipient_id=all`.
+## Unified Transport Protocol (JSON-RPC)
+- Botmax now uses one JSON-RPC envelope (`jsonrpc=2.0`, `method=botmax.transport`) for both chat text and command execution.
+- Legacy `[[[id]]]text` protocol is fully removed.
+- Heartbeats remain text frames: `<<<ping>>>` and `<<<pong>>>`.
+
+### Chat Message Frame
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "botmax.transport",
+  "id": "optional-request-id",
+  "params": {
+    "v": 2,
+    "type": "chat.message",
+    "from": "telegram:123456",
+    "to": "openclaw:botmax",
+    "text": "hello"
+  }
+}
+```
+
+### Command Execute Frame
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "botmax.transport",
+  "id": "cmd-001",
+  "params": {
+    "v": 2,
+    "type": "command.exec",
+    "from": "telegram:123456",
+    "to": "openclaw:botmax",
+    "command": "openclaw devices list",
+    "timeoutMs": 10000
+  }
+}
+```
+
+### Command Result Frame
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "botmax.transport",
+  "id": "cmd-001",
+  "params": {
+    "v": 2,
+    "type": "command.result",
+    "from": "openclaw:botmax",
+    "to": "telegram:123456",
+    "command": "openclaw devices list",
+    "method": "device.pair.list",
+    "ok": true,
+    "output": "{ ...stringified result... }",
+    "data": {}
+  }
+}
+```
+
+## Supported OpenClaw Gateway Commands
+- `openclaw devices list` -> `device.pair.list`
+- `openclaw devices approve <requestId>` -> `device.pair.approve`
+- `openclaw devices approve --latest` -> `device.pair.approve` with latest pending request
+- `openclaw gateway call <method> --params <json>` -> pass-through to gateway `method`
+- `openclaw devices *` runs with CLI semantics and `operator.pairing` scope.
+- `openclaw gateway call *` forwards method/params directly and uses default gateway method scope resolution.
+
+## Protocol Rules
+- BotKeeper <-> OpenClaw only accepts JSON-RPC `botmax.transport` frames (`params.v=2`).
+- OpenClaw accepts `chat.message` and `command.exec`.
+- BotKeeper consumes `chat.message` and `command.result`.
+- Replies always target the original sender from `params.from`.
 
 ## Troubleshooting Reconnect Loops
 - Raw inbound/outbound frames are logged as `botmax[<accountId>] inbound raw: ...` and `botmax[<accountId>] outbound raw: ...`.

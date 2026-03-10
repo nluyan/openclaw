@@ -13,12 +13,13 @@ import type { ResolvedBotmaxAccount } from "./types.js";
 export async function handleBotmaxInbound(params: {
   senderId: string;
   body: string;
+  requestId?: string | number | null;
   account: ResolvedBotmaxAccount;
   config: OpenClawConfig;
   runtime: RuntimeEnv;
   statusSink?: (patch: { lastInboundAt?: number; lastOutboundAt?: number }) => void;
 }): Promise<void> {
-  const { senderId, body, account, config, runtime, statusSink } = params;
+  const { senderId, body, requestId, account, config, runtime, statusSink } = params;
   const core = getBotmaxRuntime();
   const rawBody = body.trim();
   if (!rawBody) {
@@ -114,7 +115,7 @@ export async function handleBotmaxInbound(params: {
       if (!chunk) {
         continue;
       }
-      await sendBotmaxText(account.accountId, senderId, chunk);
+      await sendBotmaxText(account.accountId, senderId, chunk, { requestId });
       outboundDelivered += 1;
     }
   });
@@ -143,7 +144,7 @@ export async function handleBotmaxInbound(params: {
         );
       }
       if (account.doneToken !== null) {
-        await sendBotmaxText(account.accountId, senderId, account.doneToken);
+        await sendBotmaxText(account.accountId, senderId, account.doneToken, { requestId });
       }
     } finally {
       releaseHeartbeat();

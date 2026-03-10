@@ -1,10 +1,160 @@
-export type BotmaxInboundMessage = {
-  senderId: string;
-  body: string;
-};
-
 const HEARTBEAT_PING = "<<<ping>>>";
 const HEARTBEAT_PONG = "<<<pong>>>";
+const BOTMAX_JSONRPC_VERSION = "2.0";
+const BOTMAX_TRANSPORT_METHOD = "botmax.transport";
+const BOTMAX_TRANSPORT_VERSION = 2;
+const CHAT_MESSAGE_TYPE = "chat.message";
+const COMMAND_EXEC_TYPE = "command.exec";
+const COMMAND_RESULT_TYPE = "command.result";
+
+type JsonRpcId = string | number | null;
+
+type BotmaxTransportChatMessage = {
+  v: number;
+  type: typeof CHAT_MESSAGE_TYPE;
+  from: string;
+  to: string;
+  text: string;
+};
+
+type BotmaxTransportCommandExec = {
+  v: number;
+  type: typeof COMMAND_EXEC_TYPE;
+  from: string;
+  to?: string;
+  command: string;
+  timeoutMs?: number;
+};
+
+type BotmaxTransportCommandResult = {
+  v: number;
+  type: typeof COMMAND_RESULT_TYPE;
+  from: string;
+  to: string;
+  command: string;
+  method?: string;
+  ok: boolean;
+  output: string;
+  data?: unknown;
+};
+
+type BotmaxTransportParams =
+  | BotmaxTransportChatMessage
+  | BotmaxTransportCommandExec
+  | BotmaxTransportCommandResult;
+
+type BotmaxJsonRpcFrame = {
+  jsonrpc: typeof BOTMAX_JSONRPC_VERSION;
+  method: typeof BOTMAX_TRANSPORT_METHOD;
+  params: BotmaxTransportParams;
+  id?: JsonRpcId;
+};
+
+export type BotmaxInboundMessage =
+  | {
+      kind: "chat";
+      senderId: string;
+      body: string;
+      requestId?: JsonRpcId;
+    }
+  | {
+      kind: "command";
+      senderId: string;
+      command: string;
+      timeoutMs?: number;
+      requestId?: JsonRpcId;
+    };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeJsonRpcId(value: unknown): JsonRpcId | undefined {
+  if (value === null) {
+    return null;
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  return undefined;
+}
+
+function parseJsonRpcMessage(trimmed: string): BotmaxInboundMessage | null {
+  let frame: unknown;
+  try {
+    frame = JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+  if (!isRecord(frame)) {
+    return null;
+  }
+  if (frame.jsonrpc !== BOTMAX_JSONRPC_VERSION || frame.method !== BOTMAX_TRANSPORT_METHOD) {
+    return null;
+  }
+  if (!isRecord(frame.params)) {
+    return null;
+  }
+
+  const params = frame.params;
+  if (params.v !== BOTMAX_TRANSPORT_VERSION) {
+    return null;
+  }
+  const senderId = typeof params.from === "string" ? params.from.trim() : "";
+  if (!senderId) {
+    return null;
+  }
+  const requestId = normalizeJsonRpcId(frame.id);
+  const type = typeof params.type === "string" ? params.type.trim() : "";
+
+  if (type === CHAT_MESSAGE_TYPE) {
+    const body = typeof params.text === "string" ? params.text.trim() : "";
+    if (!body) {
+      return null;
+    }
+    return {
+      kind: "chat",
+      senderId,
+      body,
+      requestId,
+    };
+  }
+
+  if (type === COMMAND_EXEC_TYPE) {
+    const command = typeof params.command === "string" ? params.command.trim() : "";
+    if (!command) {
+      return null;
+    }
+    const timeoutMs =
+      typeof params.timeoutMs === "number" && Number.isFinite(params.timeoutMs) && params.timeoutMs > 0
+        ? Math.floor(params.timeoutMs)
+        : undefined;
+    return {
+      kind: "command",
+      senderId,
+      command,
+      timeoutMs,
+      requestId,
+    };
+  }
+
+  return null;
+}
+
+function stringifyTransportFrame(params: BotmaxTransportParams, requestId?: JsonRpcId): string {
+  const frame: BotmaxJsonRpcFrame = {
+    jsonrpc: BOTMAX_JSONRPC_VERSION,
+    method: BOTMAX_TRANSPORT_METHOD,
+    params,
+  };
+  if (requestId !== undefined) {
+    frame.id = requestId;
+  }
+  return JSON.stringify(frame);
+}
 
 export function parseBotmaxInboundText(text: string): BotmaxInboundMessage | null {
   const trimmed = text?.trim();
@@ -14,28 +164,63 @@ export function parseBotmaxInboundText(text: string): BotmaxInboundMessage | nul
   if (trimmed === HEARTBEAT_PING || trimmed === HEARTBEAT_PONG) {
     return null;
   }
-  if (!trimmed.startsWith("[[[")) {
-    return null;
-  }
-  const endIndex = trimmed.indexOf("]]]");
-  if (endIndex <= 2) {
-    return null;
-  }
-  const senderId = trimmed.slice(3, endIndex).trim();
-  if (!senderId) {
-    return null;
-  }
-  const body = trimmed.slice(endIndex + 3).trim();
-  if (!body) {
-    return null;
-  }
-  return { senderId, body };
+  return parseJsonRpcMessage(trimmed);
 }
 
-export function formatBotmaxOutboundText(recipientId: string, text: string): string {
-  const normalizedRecipient = recipientId?.trim();
+export function formatBotmaxOutboundText(params: {
+  recipientId: string;
+  text: string;
+  senderId?: string;
+  requestId?: JsonRpcId;
+}): string {
+  const normalizedRecipient = params.recipientId?.trim();
   if (!normalizedRecipient) {
     throw new Error("Botmax recipientId is required");
   }
-  return `[[[${normalizedRecipient}]]]${text ?? ""}`;
+  const from = params.senderId?.trim() || "openclaw:botmax";
+  return stringifyTransportFrame(
+    {
+      v: BOTMAX_TRANSPORT_VERSION,
+      type: CHAT_MESSAGE_TYPE,
+      from,
+      to: normalizedRecipient,
+      text: params.text ?? "",
+    },
+    params.requestId,
+  );
+}
+
+export function formatBotmaxOutboundCommandResult(params: {
+  recipientId: string;
+  command: string;
+  ok: boolean;
+  output: string;
+  method?: string;
+  data?: unknown;
+  senderId?: string;
+  requestId?: JsonRpcId;
+}): string {
+  const normalizedRecipient = params.recipientId?.trim();
+  if (!normalizedRecipient) {
+    throw new Error("Botmax recipientId is required");
+  }
+  const command = params.command?.trim();
+  if (!command) {
+    throw new Error("Botmax command result requires command");
+  }
+  const from = params.senderId?.trim() || "openclaw:botmax";
+  return stringifyTransportFrame(
+    {
+      v: BOTMAX_TRANSPORT_VERSION,
+      type: COMMAND_RESULT_TYPE,
+      from,
+      to: normalizedRecipient,
+      command,
+      method: params.method,
+      ok: params.ok,
+      output: params.output ?? "",
+      data: params.data,
+    },
+    params.requestId,
+  );
 }

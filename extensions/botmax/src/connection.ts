@@ -1,6 +1,6 @@
 import WebSocket from "ws";
 import type { ResolvedBotmaxAccount } from "./types.js";
-import { formatBotmaxOutboundText } from "./message-format.js";
+import { formatBotmaxOutboundCommandResult, formatBotmaxOutboundText } from "./message-format.js";
 import { getBotmaxRuntime } from "./runtime.js";
 
 export type BotmaxConnection = {
@@ -15,6 +15,11 @@ export type BotmaxConnection = {
 
 const activeConnections = new Map<string, BotmaxConnection>();
 const lastSenderPrefixByAccount = new Map<string, string>();
+
+type BotmaxSendEnvelopeOptions = {
+  requestId?: string | number | null;
+  senderId?: string;
+};
 
 export function rememberBotmaxSender(accountId: string, senderId: string): void {
   const trimmed = senderId.trim();
@@ -61,6 +66,7 @@ export async function sendBotmaxText(
   accountId: string,
   recipientId: string,
   text: string,
+  options?: BotmaxSendEnvelopeOptions,
 ): Promise<void> {
   const conn = getActiveConnection(accountId);
   if (!conn) {
@@ -73,7 +79,12 @@ export async function sendBotmaxText(
       effectiveRecipient = `${prefix}:${effectiveRecipient}`;
     }
   }
-  const payload = formatBotmaxOutboundText(effectiveRecipient, text);
+  const payload = formatBotmaxOutboundText({
+    recipientId: effectiveRecipient,
+    text,
+    requestId: options?.requestId,
+    senderId: options?.senderId,
+  });
   try {
     conn.log?.(`botmax[${accountId}] outbound raw: ${payload}`);
     if (!conn.log) {
@@ -90,6 +101,44 @@ export async function sendBotmaxText(
         `botmax[${accountId}] recipient missing channel prefix: '${recipientId}'`,
       );
     }
+  } catch {
+    // Ignore logging failures to avoid blocking outbound delivery.
+  }
+  await conn.sendText(payload);
+  conn.statusSink?.({ lastOutboundAt: Date.now() });
+}
+
+export async function sendBotmaxCommandResult(params: {
+  accountId: string;
+  recipientId: string;
+  command: string;
+  ok: boolean;
+  output: string;
+  method?: string;
+  data?: unknown;
+  requestId?: string | number | null;
+  senderId?: string;
+}): Promise<void> {
+  const conn = getActiveConnection(params.accountId);
+  if (!conn) {
+    throw new Error("Botmax connection is not active");
+  }
+  const recipientId = params.recipientId.trim();
+  if (!recipientId) {
+    throw new Error("Botmax command result recipientId is required");
+  }
+  const payload = formatBotmaxOutboundCommandResult({
+    recipientId,
+    command: params.command,
+    ok: params.ok,
+    output: params.output,
+    method: params.method,
+    data: params.data,
+    requestId: params.requestId,
+    senderId: params.senderId,
+  });
+  try {
+    conn.log?.(`botmax[${params.accountId}] outbound command result: ${payload}`);
   } catch {
     // Ignore logging failures to avoid blocking outbound delivery.
   }

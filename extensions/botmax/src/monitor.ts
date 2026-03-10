@@ -4,12 +4,14 @@ import {
   buildBotmaxUrl,
   clearActiveConnection,
   createBotmaxSender,
+  sendBotmaxCommandResult,
   redactBotmaxUrl,
   rememberBotmaxSender,
   setActiveConnection,
 } from "./connection.js";
 import { handleBotmaxInbound } from "./inbound.js";
 import { parseBotmaxInboundText } from "./message-format.js";
+import { executeBotmaxGatewayCommand } from "./command-exec.js";
 import type { ResolvedBotmaxAccount } from "./types.js";
 
 export type BotmaxMonitorOptions = {
@@ -179,17 +181,60 @@ export function monitorBotmaxAccount(options: BotmaxMonitorOptions): { stop: () 
           if (!inbound) {
             return;
           }
-          rememberBotmaxSender(account.accountId, inbound.senderId);
-          void handleBotmaxInbound({
-            senderId: inbound.senderId,
-            body: inbound.body,
-            account,
-            config,
-            runtime,
-            statusSink: (patch) => statusSink?.(patch),
-          }).catch((err) => {
-            runtime.error?.(`botmax[${account.accountId}]: inbound error: ${String(err)}`);
-          });
+          if (inbound.kind === "chat") {
+            rememberBotmaxSender(account.accountId, inbound.senderId);
+            void handleBotmaxInbound({
+              senderId: inbound.senderId,
+              body: inbound.body,
+              requestId: inbound.requestId,
+              account,
+              config,
+              runtime,
+              statusSink: (patch) => statusSink?.(patch),
+            }).catch((err) => {
+              runtime.error?.(`botmax[${account.accountId}]: inbound error: ${String(err)}`);
+            });
+            return;
+          }
+
+          if (inbound.kind === "command") {
+            rememberBotmaxSender(account.accountId, inbound.senderId);
+            void executeBotmaxGatewayCommand({
+              command: inbound.command,
+              timeoutMs: inbound.timeoutMs,
+            })
+              .then(async (result) => {
+                await sendBotmaxCommandResult({
+                  accountId: account.accountId,
+                  recipientId: inbound.senderId,
+                  command: inbound.command,
+                  method: result.method,
+                  ok: result.ok,
+                  output: result.output,
+                  data: result.data,
+                  requestId: inbound.requestId,
+                });
+              })
+              .catch(async (err) => {
+                runtime.error?.(
+                  `botmax[${account.accountId}]: command execution error: ${String(err)}`,
+                );
+                try {
+                  await sendBotmaxCommandResult({
+                    accountId: account.accountId,
+                    recipientId: inbound.senderId,
+                    command: inbound.command,
+                    ok: false,
+                    output: err instanceof Error ? err.message : String(err),
+                    requestId: inbound.requestId,
+                  });
+                } catch (sendErr) {
+                  runtime.error?.(
+                    `botmax[${account.accountId}]: command result send error: ${String(sendErr)}`,
+                  );
+                }
+              });
+          }
         });
 
         const disconnect = await waitForDisconnect(ws, abortSignal);
