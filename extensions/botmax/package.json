@@ -1,0 +1,29 @@
+{
+  "name": "@openclaw/botmax",
+  "version": "2026.2.26",
+  "description": "OpenClaw Botmax channel plugin",
+  "type": "module",
+  "dependencies": {
+    "ws": "^8.19.0",
+    "zod": "^4.3.6"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "channel": {
+      "id": "botmax",
+      "label": "Botmax",
+      "selectionLabel": "Botmax (WebSocket)",
+      "docsPath": "/channels/botmax",
+      "docsLabel": "botmax",
+      "blurb": "WebSocket bridge for Botmax",
+      "order": 95
+    },
+    "install": {
+      "npmSpec": "@openclaw/botmax",
+      "localPath": "extensions/botmax",
+      "defaultChoice": "npm"
+    }
+  }
+}

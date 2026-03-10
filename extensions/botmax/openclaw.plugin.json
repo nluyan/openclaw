@@ -1,0 +1,9 @@
+{
+  "id": "botmax",
+  "channels": ["botmax"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}
