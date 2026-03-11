@@ -76,6 +76,8 @@
 - `openclaw gateway call <method> --params <json>` -> pass-through to gateway `method`
 - `openclaw devices *` runs with CLI semantics and `operator.pairing` scope.
 - `openclaw gateway call *` forwards method/params directly and uses default gateway method scope resolution.
+- `openclaw devices list/approve` uses plugin-sdk pairing APIs directly.
+- `openclaw gateway call *` executes via local `openclaw gateway call ... --json` command fallback.
 
 ## Protocol Rules
 - BotKeeper <-> OpenClaw only accepts JSON-RPC `botmax.transport` frames (`params.v=2`).

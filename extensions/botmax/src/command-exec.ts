@@ -1,9 +1,15 @@
-import { getBotmaxRuntime } from "./runtime.js";
+import {
+  approveDevicePairing,
+  listDevicePairing,
+  runPluginCommandWithTimeout,
+} from "openclaw/plugin-sdk";
 
 type CommandMapping = {
+  kind: "gateway.call" | "devices.list" | "devices.approve";
   method: string;
-  defaultParams: Record<string, unknown>;
-  scopes?: string[];
+  defaultParams?: Record<string, unknown>;
+  requestId?: string;
+  latest?: boolean;
 };
 
 export type BotmaxCommandExecutionResult = {
@@ -14,6 +20,7 @@ export type BotmaxCommandExecutionResult = {
 };
 
 const DOUBLE_QUOTE_ESCAPES = new Set(["\\", '"', "$", "`", "\n", "\r"]);
+const DEFAULT_GATEWAY_CALL_TIMEOUT_MS = 30_000;
 
 function stringifyResult(value: unknown): string {
   if (typeof value === "string") {
@@ -181,6 +188,7 @@ function mapCommandToGatewayMethod(tokens: string[]): CommandMapping {
     }
 
     return {
+      kind: "gateway.call",
       method,
       defaultParams: typeof paramsValue === "object" && paramsValue !== null ? paramsValue : {},
     };
@@ -192,9 +200,8 @@ function mapCommandToGatewayMethod(tokens: string[]): CommandMapping {
 
   if (action === "list") {
     return {
+      kind: "devices.list",
       method: "device.pair.list",
-      defaultParams: {},
-      scopes: ["operator.pairing"],
     };
   }
 
@@ -235,9 +242,10 @@ function mapCommandToGatewayMethod(tokens: string[]): CommandMapping {
     }
 
     return {
+      kind: "devices.approve",
       method: "device.pair.approve",
-      defaultParams: latest ? { latest: true } : { requestId },
-      scopes: ["operator.pairing"],
+      requestId,
+      latest,
     };
   }
 
@@ -274,14 +282,50 @@ export async function executeBotmaxGatewayCommand(params: {
     };
   }
 
-  const runtime = getBotmaxRuntime();
   try {
-    const data = await runtime.system.callGatewayCli({
-      method: mapped.method,
-      params: mapped.defaultParams,
-      ...(params.timeoutMs ? { timeoutMs: params.timeoutMs } : {}),
-      ...(mapped.scopes ? { scopes: mapped.scopes } : {}),
-    });
+    let data: unknown;
+
+    if (mapped.kind === "devices.list") {
+      data = await listDevicePairing();
+    } else if (mapped.kind === "devices.approve") {
+      const requestId =
+        mapped.latest
+          ? (await listDevicePairing()).pending[0]?.requestId
+          : mapped.requestId?.trim();
+      if (!requestId) {
+        throw new Error("no pending pairing request available");
+      }
+      const approved = await approveDevicePairing(requestId);
+      if (!approved) {
+        throw new Error(`pairing request not found: ${requestId}`);
+      }
+      data = approved;
+    } else {
+      const argv = ["openclaw", "gateway", "call", mapped.method];
+      if (mapped.defaultParams && Object.keys(mapped.defaultParams).length > 0) {
+        argv.push("--params", JSON.stringify(mapped.defaultParams));
+      }
+      argv.push("--json");
+      const timeoutMs =
+        typeof params.timeoutMs === "number" && Number.isFinite(params.timeoutMs) && params.timeoutMs > 0
+          ? Math.floor(params.timeoutMs)
+          : DEFAULT_GATEWAY_CALL_TIMEOUT_MS;
+      const result = await runPluginCommandWithTimeout({ argv, timeoutMs });
+      if (result.code !== 0) {
+        throw new Error((result.stderr || result.stdout || `gateway call failed (${result.code})`).trim());
+      }
+      const stdout = result.stdout.trim();
+      if (!stdout) {
+        data = {};
+      } else {
+        try {
+          data = JSON.parse(stdout);
+        } catch {
+          data = stdout;
+        }
+      }
+    }
+
     return {
       ok: true,
       method: mapped.method,
