@@ -21,7 +21,7 @@ vi.mock("openclaw/plugin-sdk", () => ({
   runPluginCommandWithTimeout: (...args: unknown[]) => runPluginCommandWithTimeoutMock(...args),
 }));
 
-vi.mock("./local-pairing.js", () => ({
+vi.mock("./local-state-commands.js", () => ({
   removePairedDeviceLocally: (...args: unknown[]) => removePairedDeviceLocallyMock(...args),
   clearDevicePairingLocally: (...args: unknown[]) => clearDevicePairingLocallyMock(...args),
   rotateDeviceTokenLocally: (...args: unknown[]) => rotateDeviceTokenLocallyMock(...args),
@@ -83,7 +83,7 @@ describe("botmax command execution", () => {
     expect(result.method).toBe("device.pair.approve");
   });
 
-  it("maps devices reject to local pairing store", async () => {
+  it("maps devices reject to local state store", async () => {
     resetAllMocks();
     rejectDevicePairingMock.mockResolvedValueOnce({
       requestId: "req-002",
@@ -100,7 +100,7 @@ describe("botmax command execution", () => {
     expect(result.method).toBe("device.pair.reject");
   });
 
-  it("maps devices remove to local pairing store", async () => {
+  it("maps devices remove to local state store", async () => {
     resetAllMocks();
     removePairedDeviceLocallyMock.mockResolvedValueOnce({
       deviceId: "dev-003",
@@ -116,7 +116,7 @@ describe("botmax command execution", () => {
     expect(result.method).toBe("device.pair.remove");
   });
 
-  it("maps devices clear to local pairing store", async () => {
+  it("maps devices clear to local state store", async () => {
     resetAllMocks();
     clearDevicePairingLocallyMock.mockResolvedValueOnce({
       removedDeviceIds: ["dev-1"],
@@ -135,7 +135,7 @@ describe("botmax command execution", () => {
     expect(result.method).toBe("device.pair.clear");
   });
 
-  it("maps devices rotate to local pairing store", async () => {
+  it("maps devices rotate to local state store", async () => {
     resetAllMocks();
     rotateDeviceTokenLocallyMock.mockResolvedValueOnce({
       role: "operator",
@@ -146,7 +146,8 @@ describe("botmax command execution", () => {
     });
 
     const result = await executeBotmaxGatewayCommand({
-      command: "openclaw devices rotate --device dev-1 --role operator --scope operator.read --json",
+      command:
+        "openclaw devices rotate --device dev-1 --role operator --scope operator.read --json",
     });
 
     expect(rotateDeviceTokenLocallyMock).toHaveBeenCalledWith({
@@ -159,7 +160,7 @@ describe("botmax command execution", () => {
     expect(result.method).toBe("device.token.rotate");
   });
 
-  it("maps devices revoke to local pairing store", async () => {
+  it("maps devices revoke to local state store", async () => {
     resetAllMocks();
     revokeDeviceTokenLocallyMock.mockResolvedValueOnce({
       role: "operator",
@@ -179,7 +180,7 @@ describe("botmax command execution", () => {
     expect(result.method).toBe("device.token.revoke");
   });
 
-  it("maps nodes pending to local pairing store", async () => {
+  it("maps nodes pending to local state store", async () => {
     resetAllMocks();
     listNodePairingLocallyMock.mockResolvedValueOnce({
       pending: [{ requestId: "node-req-1" }],
@@ -196,7 +197,7 @@ describe("botmax command execution", () => {
     expect(result.method).toBe("node.pair.list");
   });
 
-  it("maps nodes approve to local pairing store", async () => {
+  it("maps nodes approve to local state store", async () => {
     resetAllMocks();
     approveNodePairingLocallyMock.mockResolvedValueOnce({
       requestId: "node-req-2",
@@ -213,7 +214,7 @@ describe("botmax command execution", () => {
     expect(result.method).toBe("node.pair.approve");
   });
 
-  it("maps nodes reject to local pairing store", async () => {
+  it("maps nodes reject to local state store", async () => {
     resetAllMocks();
     rejectNodePairingLocallyMock.mockResolvedValueOnce({
       requestId: "node-req-3",
@@ -230,7 +231,7 @@ describe("botmax command execution", () => {
     expect(result.method).toBe("node.pair.reject");
   });
 
-  it("maps nodes rename to local pairing store", async () => {
+  it("maps nodes rename to local state store", async () => {
     resetAllMocks();
     renamePairedNodeLocallyMock.mockResolvedValueOnce({
       nodeId: "node-4",

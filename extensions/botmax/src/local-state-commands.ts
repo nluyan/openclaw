@@ -107,11 +107,11 @@ type NodePairingStateFile = {
   pairedByNodeId: Record<string, NodePairingPairedNode>;
 };
 
-let pairingQueue = Promise.resolve();
+let stateCommandQueue = Promise.resolve();
 
-function withPairingLock<T>(fn: () => Promise<T>): Promise<T> {
-  const run = pairingQueue.then(fn, fn);
-  pairingQueue = run.then(
+function withStateLock<T>(fn: () => Promise<T>): Promise<T> {
+  const run = stateCommandQueue.then(fn, fn);
+  stateCommandQueue = run.then(
     () => undefined,
     () => undefined,
   );
@@ -363,8 +363,10 @@ function resolveDeviceTokenUpdateContext(
   };
 }
 
-export async function removePairedDeviceLocally(deviceId: string): Promise<{ deviceId: string } | null> {
-  return await withPairingLock(async () => {
+export async function removePairedDeviceLocally(
+  deviceId: string,
+): Promise<{ deviceId: string } | null> {
+  return await withStateLock(async () => {
     const state = await loadDeviceState();
     const normalized = normalizeDeviceId(deviceId);
     if (!normalized || !state.pairedByDeviceId[normalized]) {
@@ -379,10 +381,12 @@ export async function removePairedDeviceLocally(deviceId: string): Promise<{ dev
 export async function clearDevicePairingLocally(params: {
   includePending: boolean;
 }): Promise<{ removedDeviceIds: string[]; rejectedRequestIds: string[] }> {
-  return await withPairingLock(async () => {
+  return await withStateLock(async () => {
     const state = await loadDeviceState();
     const removedDeviceIds = Object.keys(state.pairedByDeviceId).toSorted();
-    const rejectedRequestIds = params.includePending ? Object.keys(state.pendingById).toSorted() : [];
+    const rejectedRequestIds = params.includePending
+      ? Object.keys(state.pendingById).toSorted()
+      : [];
 
     state.pairedByDeviceId = {};
     if (params.includePending) {
@@ -399,7 +403,7 @@ export async function rotateDeviceTokenLocally(params: {
   role: string;
   scopes?: string[];
 }): Promise<DeviceAuthToken | null> {
-  return await withPairingLock(async () => {
+  return await withStateLock(async () => {
     const state = await loadDeviceState();
     const context = resolveDeviceTokenUpdateContext(state, params.deviceId, params.role);
     if (!context) {
@@ -408,7 +412,9 @@ export async function rotateDeviceTokenLocally(params: {
 
     const { device, role, tokens, existing } = context;
     const requestedScopes = normalizeScopes(params.scopes ?? existing?.scopes ?? device.scopes);
-    const approvedScopes = normalizeScopes(device.approvedScopes ?? device.scopes ?? existing?.scopes);
+    const approvedScopes = normalizeScopes(
+      device.approvedScopes ?? device.scopes ?? existing?.scopes,
+    );
     if (!scopesAllowWithImplications(requestedScopes, approvedScopes)) {
       return null;
     }
@@ -434,7 +440,7 @@ export async function revokeDeviceTokenLocally(params: {
   deviceId: string;
   role: string;
 }): Promise<DeviceAuthToken | null> {
-  return await withPairingLock(async () => {
+  return await withStateLock(async () => {
     const state = await loadDeviceState();
     const normalizedDeviceId = normalizeDeviceId(params.deviceId);
     const device = state.pairedByDeviceId[normalizedDeviceId];
@@ -471,7 +477,7 @@ export async function listNodePairingLocally(): Promise<{
 export async function approveNodePairingLocally(
   requestId: string,
 ): Promise<{ requestId: string; node: NodePairingPairedNode } | null> {
-  return await withPairingLock(async () => {
+  return await withStateLock(async () => {
     const state = await loadNodeState();
     const pending = state.pendingById[requestId];
     if (!pending) {
@@ -510,7 +516,7 @@ export async function approveNodePairingLocally(
 export async function rejectNodePairingLocally(
   requestId: string,
 ): Promise<{ requestId: string; nodeId: string } | null> {
-  return await withPairingLock(async () => {
+  return await withStateLock(async () => {
     const state = await loadNodeState();
     const pending = state.pendingById[requestId];
     if (!pending) {
@@ -596,7 +602,7 @@ export async function renamePairedNodeLocally(params: {
   query: string;
   displayName: string;
 }): Promise<{ nodeId: string; displayName: string }> {
-  return await withPairingLock(async () => {
+  return await withStateLock(async () => {
     const state = await loadNodeState();
     const nodeId = resolvePairedNodeId(state, params.query);
     const existing = state.pairedByNodeId[nodeId];

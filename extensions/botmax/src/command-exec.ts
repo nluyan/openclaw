@@ -13,7 +13,7 @@ import {
   removePairedDeviceLocally,
   revokeDeviceTokenLocally,
   rotateDeviceTokenLocally,
-} from "./local-pairing.js";
+} from "./local-state-commands.js";
 
 type CommandMapping =
   | {
@@ -181,12 +181,7 @@ function parseBooleanFlag(value: string | undefined): boolean | undefined {
   if (normalized === "true" || normalized === "1" || normalized === "yes" || normalized === "on") {
     return true;
   }
-  if (
-    normalized === "false" ||
-    normalized === "0" ||
-    normalized === "no" ||
-    normalized === "off"
-  ) {
+  if (normalized === "false" || normalized === "0" || normalized === "no" || normalized === "off") {
     return false;
   }
   return undefined;
@@ -736,10 +731,9 @@ export async function executeBotmaxGatewayCommand(params: {
     if (mapped.kind === "devices.list") {
       data = await listDevicePairing();
     } else if (mapped.kind === "devices.approve") {
-      const requestId =
-        mapped.latest
-          ? (await listDevicePairing()).pending[0]?.requestId
-          : mapped.requestId?.trim();
+      const requestId = mapped.latest
+        ? (await listDevicePairing()).pending[0]?.requestId
+        : mapped.requestId?.trim();
       if (!requestId) {
         throw new Error("no pending pairing request available");
       }
