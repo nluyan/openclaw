@@ -1,16 +1,83 @@
 import {
   approveDevicePairing,
   listDevicePairing,
+  rejectDevicePairing,
   runPluginCommandWithTimeout,
 } from "openclaw/plugin-sdk";
+import {
+  approveNodePairingLocally,
+  clearDevicePairingLocally,
+  listNodePairingLocally,
+  renamePairedNodeLocally,
+  rejectNodePairingLocally,
+  removePairedDeviceLocally,
+  revokeDeviceTokenLocally,
+  rotateDeviceTokenLocally,
+} from "./local-pairing.js";
 
-type CommandMapping = {
-  kind: "gateway.call" | "devices.list" | "devices.approve";
-  method: string;
-  defaultParams?: Record<string, unknown>;
-  requestId?: string;
-  latest?: boolean;
-};
+type CommandMapping =
+  | {
+      kind: "devices.list";
+      method: "device.pair.list";
+    }
+  | {
+      kind: "devices.approve";
+      method: "device.pair.approve";
+      requestId?: string;
+      latest: boolean;
+    }
+  | {
+      kind: "devices.reject";
+      method: "device.pair.reject";
+      requestId: string;
+    }
+  | {
+      kind: "devices.remove";
+      method: "device.pair.remove";
+      deviceId: string;
+    }
+  | {
+      kind: "devices.clear";
+      method: "device.pair.clear";
+      includePending: boolean;
+    }
+  | {
+      kind: "devices.rotate";
+      method: "device.token.rotate";
+      deviceId: string;
+      role: string;
+      scopes?: string[];
+    }
+  | {
+      kind: "devices.revoke";
+      method: "device.token.revoke";
+      deviceId: string;
+      role: string;
+    }
+  | {
+      kind: "nodes.pending";
+      method: "node.pair.list";
+    }
+  | {
+      kind: "nodes.approve";
+      method: "node.pair.approve";
+      requestId: string;
+    }
+  | {
+      kind: "nodes.reject";
+      method: "node.pair.reject";
+      requestId: string;
+    }
+  | {
+      kind: "nodes.rename";
+      method: "node.rename";
+      nodeQuery: string;
+      displayName: string;
+    }
+  | {
+      kind: "command.forward";
+      argv: string[];
+    };
 
 export type BotmaxCommandExecutionResult = {
   ok: boolean;
@@ -20,7 +87,7 @@ export type BotmaxCommandExecutionResult = {
 };
 
 const DOUBLE_QUOTE_ESCAPES = new Set(["\\", '"', "$", "`", "\n", "\r"]);
-const DEFAULT_GATEWAY_CALL_TIMEOUT_MS = 30_000;
+const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
 
 function stringifyResult(value: unknown): string {
   if (typeof value === "string") {
@@ -144,112 +211,493 @@ function readOptionValue(tokens: string[], index: number): { value?: string; nex
   };
 }
 
-function mapCommandToGatewayMethod(tokens: string[]): CommandMapping {
-  if (tokens.length < 3) {
-    throw new Error("command must include namespace and action, e.g. openclaw devices list");
+function isJsonFlag(token: string): boolean {
+  return token === "--json";
+}
+
+function tryMapDevicesList(tokens: string[]): CommandMapping | null {
+  for (let index = 3; index < tokens.length; index += 1) {
+    const token = tokens[index] ?? "";
+    if (!token || isJsonFlag(token)) {
+      continue;
+    }
+    return null;
+  }
+
+  return {
+    kind: "devices.list",
+    method: "device.pair.list",
+  };
+}
+
+function tryMapDevicesApprove(tokens: string[]): CommandMapping | null {
+  let requestId: string | undefined;
+  let latest = false;
+
+  for (let index = 3; index < tokens.length; index += 1) {
+    const token = tokens[index] ?? "";
+    if (!token || isJsonFlag(token)) {
+      continue;
+    }
+    if (token.startsWith("--request-id")) {
+      const { value, nextIndex } = readOptionValue(tokens, index);
+      if (!value) {
+        throw new Error("--request-id requires a value");
+      }
+      requestId = value.trim();
+      index = nextIndex;
+      continue;
+    }
+    if (token.startsWith("--latest")) {
+      const { value, nextIndex } = readOptionValue(tokens, index);
+      const parsed = parseBooleanFlag(value);
+      latest = parsed ?? true;
+      index = nextIndex;
+      continue;
+    }
+    if (token.startsWith("--")) {
+      return null;
+    }
+    if (!requestId) {
+      requestId = token.trim();
+      continue;
+    }
+    return null;
+  }
+
+  if (!requestId && !latest) {
+    latest = true;
+  }
+  if (!latest && !requestId) {
+    throw new Error("openclaw devices approve requires requestId or --latest");
+  }
+
+  return {
+    kind: "devices.approve",
+    method: "device.pair.approve",
+    requestId,
+    latest,
+  };
+}
+
+function tryMapDevicesReject(tokens: string[]): CommandMapping | null {
+  let requestId: string | undefined;
+
+  for (let index = 3; index < tokens.length; index += 1) {
+    const token = tokens[index] ?? "";
+    if (!token || isJsonFlag(token)) {
+      continue;
+    }
+    if (token.startsWith("--request-id")) {
+      const { value, nextIndex } = readOptionValue(tokens, index);
+      if (!value) {
+        throw new Error("--request-id requires a value");
+      }
+      requestId = value.trim();
+      index = nextIndex;
+      continue;
+    }
+    if (token.startsWith("--")) {
+      return null;
+    }
+    if (!requestId) {
+      requestId = token.trim();
+      continue;
+    }
+    return null;
+  }
+
+  if (!requestId) {
+    throw new Error("openclaw devices reject requires requestId");
+  }
+
+  return {
+    kind: "devices.reject",
+    method: "device.pair.reject",
+    requestId,
+  };
+}
+
+function tryMapDevicesRemove(tokens: string[]): CommandMapping | null {
+  let deviceId: string | undefined;
+
+  for (let index = 3; index < tokens.length; index += 1) {
+    const token = tokens[index] ?? "";
+    if (!token || isJsonFlag(token)) {
+      continue;
+    }
+    if (token.startsWith("--")) {
+      return null;
+    }
+    if (!deviceId) {
+      deviceId = token.trim();
+      continue;
+    }
+    return null;
+  }
+
+  if (!deviceId) {
+    throw new Error("openclaw devices remove requires deviceId");
+  }
+
+  return {
+    kind: "devices.remove",
+    method: "device.pair.remove",
+    deviceId,
+  };
+}
+
+function tryMapDevicesClear(tokens: string[]): CommandMapping | null {
+  let yes = false;
+  let includePending = false;
+
+  for (let index = 3; index < tokens.length; index += 1) {
+    const token = tokens[index] ?? "";
+    if (!token || isJsonFlag(token)) {
+      continue;
+    }
+    if (token.startsWith("--yes")) {
+      const { value, nextIndex } = readOptionValue(tokens, index);
+      const parsed = parseBooleanFlag(value);
+      yes = parsed ?? true;
+      index = nextIndex;
+      continue;
+    }
+    if (token.startsWith("--pending")) {
+      const { value, nextIndex } = readOptionValue(tokens, index);
+      const parsed = parseBooleanFlag(value);
+      includePending = parsed ?? true;
+      index = nextIndex;
+      continue;
+    }
+    return null;
+  }
+
+  if (!yes) {
+    throw new Error("openclaw devices clear requires --yes");
+  }
+
+  return {
+    kind: "devices.clear",
+    method: "device.pair.clear",
+    includePending,
+  };
+}
+
+function readRequiredLongOption(
+  tokens: string[],
+  startIndex: number,
+  optionName: string,
+): { value: string; nextIndex: number } {
+  const { value, nextIndex } = readOptionValue(tokens, startIndex);
+  const normalized = value?.trim();
+  if (!normalized) {
+    throw new Error(`${optionName} requires a value`);
+  }
+  return {
+    value: normalized,
+    nextIndex,
+  };
+}
+
+function tryMapDevicesRotate(tokens: string[]): CommandMapping | null {
+  let deviceId: string | undefined;
+  let role: string | undefined;
+  const scopes: string[] = [];
+
+  for (let index = 3; index < tokens.length; index += 1) {
+    const token = tokens[index] ?? "";
+    if (!token || isJsonFlag(token)) {
+      continue;
+    }
+    if (token.startsWith("--device")) {
+      const resolved = readRequiredLongOption(tokens, index, "--device");
+      deviceId = resolved.value;
+      index = resolved.nextIndex;
+      continue;
+    }
+    if (token.startsWith("--role")) {
+      const resolved = readRequiredLongOption(tokens, index, "--role");
+      role = resolved.value;
+      index = resolved.nextIndex;
+      continue;
+    }
+    if (token.startsWith("--scope")) {
+      const resolved = readRequiredLongOption(tokens, index, "--scope");
+      scopes.push(resolved.value);
+      index = resolved.nextIndex;
+      continue;
+    }
+    return null;
+  }
+
+  if (!deviceId || !role) {
+    throw new Error("openclaw devices rotate requires --device and --role");
+  }
+
+  return {
+    kind: "devices.rotate",
+    method: "device.token.rotate",
+    deviceId,
+    role,
+    scopes: scopes.length > 0 ? scopes : undefined,
+  };
+}
+
+function tryMapDevicesRevoke(tokens: string[]): CommandMapping | null {
+  let deviceId: string | undefined;
+  let role: string | undefined;
+
+  for (let index = 3; index < tokens.length; index += 1) {
+    const token = tokens[index] ?? "";
+    if (!token || isJsonFlag(token)) {
+      continue;
+    }
+    if (token.startsWith("--device")) {
+      const resolved = readRequiredLongOption(tokens, index, "--device");
+      deviceId = resolved.value;
+      index = resolved.nextIndex;
+      continue;
+    }
+    if (token.startsWith("--role")) {
+      const resolved = readRequiredLongOption(tokens, index, "--role");
+      role = resolved.value;
+      index = resolved.nextIndex;
+      continue;
+    }
+    return null;
+  }
+
+  if (!deviceId || !role) {
+    throw new Error("openclaw devices revoke requires --device and --role");
+  }
+
+  return {
+    kind: "devices.revoke",
+    method: "device.token.revoke",
+    deviceId,
+    role,
+  };
+}
+
+function tryMapNodesPending(tokens: string[]): CommandMapping | null {
+  for (let index = 3; index < tokens.length; index += 1) {
+    const token = tokens[index] ?? "";
+    if (!token || isJsonFlag(token)) {
+      continue;
+    }
+    return null;
+  }
+
+  return {
+    kind: "nodes.pending",
+    method: "node.pair.list",
+  };
+}
+
+function tryMapNodesApprove(tokens: string[]): CommandMapping | null {
+  let requestId: string | undefined;
+
+  for (let index = 3; index < tokens.length; index += 1) {
+    const token = tokens[index] ?? "";
+    if (!token || isJsonFlag(token)) {
+      continue;
+    }
+    if (token.startsWith("--request-id")) {
+      const resolved = readRequiredLongOption(tokens, index, "--request-id");
+      requestId = resolved.value;
+      index = resolved.nextIndex;
+      continue;
+    }
+    if (token.startsWith("--")) {
+      return null;
+    }
+    if (!requestId) {
+      requestId = token.trim();
+      continue;
+    }
+    return null;
+  }
+
+  if (!requestId) {
+    throw new Error("openclaw nodes approve requires requestId");
+  }
+
+  return {
+    kind: "nodes.approve",
+    method: "node.pair.approve",
+    requestId,
+  };
+}
+
+function tryMapNodesReject(tokens: string[]): CommandMapping | null {
+  let requestId: string | undefined;
+
+  for (let index = 3; index < tokens.length; index += 1) {
+    const token = tokens[index] ?? "";
+    if (!token || isJsonFlag(token)) {
+      continue;
+    }
+    if (token.startsWith("--request-id")) {
+      const resolved = readRequiredLongOption(tokens, index, "--request-id");
+      requestId = resolved.value;
+      index = resolved.nextIndex;
+      continue;
+    }
+    if (token.startsWith("--")) {
+      return null;
+    }
+    if (!requestId) {
+      requestId = token.trim();
+      continue;
+    }
+    return null;
+  }
+
+  if (!requestId) {
+    throw new Error("openclaw nodes reject requires requestId");
+  }
+
+  return {
+    kind: "nodes.reject",
+    method: "node.pair.reject",
+    requestId,
+  };
+}
+
+function tryMapNodesRename(tokens: string[]): CommandMapping | null {
+  let nodeQuery: string | undefined;
+  let displayName: string | undefined;
+
+  for (let index = 3; index < tokens.length; index += 1) {
+    const token = tokens[index] ?? "";
+    if (!token || isJsonFlag(token)) {
+      continue;
+    }
+    if (token.startsWith("--node")) {
+      const resolved = readRequiredLongOption(tokens, index, "--node");
+      nodeQuery = resolved.value;
+      index = resolved.nextIndex;
+      continue;
+    }
+    if (token.startsWith("--name")) {
+      const resolved = readRequiredLongOption(tokens, index, "--name");
+      displayName = resolved.value;
+      index = resolved.nextIndex;
+      continue;
+    }
+    return null;
+  }
+
+  if (!nodeQuery || !displayName) {
+    throw new Error("openclaw nodes rename requires --node and --name");
+  }
+
+  return {
+    kind: "nodes.rename",
+    method: "node.rename",
+    nodeQuery,
+    displayName,
+  };
+}
+
+function mapCommand(tokens: string[]): CommandMapping {
+  if (tokens.length === 0) {
+    throw new Error("command is empty");
   }
   if (tokens[0].toLowerCase() !== "openclaw") {
     throw new Error("command must start with 'openclaw'");
   }
 
-  const namespace = tokens[1].toLowerCase();
-  const action = tokens[2].toLowerCase();
+  const namespace = tokens[1]?.toLowerCase();
+  const action = tokens[2]?.toLowerCase();
 
   if (namespace === "gateway" && action === "call") {
-    const method = tokens[3]?.trim();
-    if (!method) {
-      throw new Error("openclaw gateway call requires a gateway method name");
-    }
-
-    let paramsValue: unknown = {};
-
-    for (let index = 4; index < tokens.length; index += 1) {
-      const token = tokens[index] ?? "";
-      if (!token) {
-        continue;
-      }
-      if (token.startsWith("--params")) {
-        const { value, nextIndex } = readOptionValue(tokens, index);
-        if (!value) {
-          throw new Error("--params requires a JSON value");
-        }
-        try {
-          paramsValue = JSON.parse(value);
-        } catch {
-          throw new Error("--params must be valid JSON");
-        }
-        index = nextIndex;
-        continue;
-      }
-      if (token === "--json") {
-        continue;
-      }
-      throw new Error(`unsupported argument '${token}' for openclaw gateway call`);
-    }
-
-    return {
-      kind: "gateway.call",
-      method,
-      defaultParams: typeof paramsValue === "object" && paramsValue !== null ? paramsValue : {},
-    };
+    throw new Error("openclaw gateway call is no longer supported; use a direct openclaw command");
   }
 
-  if (namespace !== "devices") {
-    throw new Error(`unsupported openclaw namespace '${tokens[1]}'`);
-  }
-
-  if (action === "list") {
-    return {
-      kind: "devices.list",
-      method: "device.pair.list",
-    };
-  }
-
-  if (action === "approve") {
-    let requestId: string | undefined;
-    let latest = false;
-
-    for (let index = 3; index < tokens.length; index += 1) {
-      const token = tokens[index] ?? "";
-      if (!token) {
-        continue;
-      }
-      if (token.startsWith("--request-id")) {
-        const { value, nextIndex } = readOptionValue(tokens, index);
-        if (!value) {
-          throw new Error("--request-id requires a value");
-        }
-        requestId = value.trim();
-        index = nextIndex;
-        continue;
-      }
-      if (token.startsWith("--latest")) {
-        const { value, nextIndex } = readOptionValue(tokens, index);
-        const parsed = parseBooleanFlag(value);
-        latest = parsed ?? true;
-        index = nextIndex;
-        continue;
-      }
-      if (!token.startsWith("--") && !requestId) {
-        requestId = token.trim();
-        continue;
-      }
-      throw new Error(`unsupported argument '${token}' for openclaw devices approve`);
+  if (namespace === "devices") {
+    if (action === "list") {
+      return tryMapDevicesList(tokens) ?? { kind: "command.forward", argv: tokens };
     }
 
-    if (!latest && !requestId) {
-      throw new Error("openclaw devices approve requires requestId or --latest");
+    if (action === "approve") {
+      return tryMapDevicesApprove(tokens) ?? { kind: "command.forward", argv: tokens };
     }
 
-    return {
-      kind: "devices.approve",
-      method: "device.pair.approve",
-      requestId,
-      latest,
-    };
+    if (action === "reject") {
+      return tryMapDevicesReject(tokens) ?? { kind: "command.forward", argv: tokens };
+    }
+
+    if (action === "remove") {
+      return tryMapDevicesRemove(tokens) ?? { kind: "command.forward", argv: tokens };
+    }
+
+    if (action === "clear") {
+      return tryMapDevicesClear(tokens) ?? { kind: "command.forward", argv: tokens };
+    }
+
+    if (action === "rotate") {
+      return tryMapDevicesRotate(tokens) ?? { kind: "command.forward", argv: tokens };
+    }
+
+    if (action === "revoke") {
+      return tryMapDevicesRevoke(tokens) ?? { kind: "command.forward", argv: tokens };
+    }
   }
 
-  throw new Error(`unsupported openclaw devices action '${tokens[2]}'`);
+  if (namespace === "nodes") {
+    if (action === "pending") {
+      return tryMapNodesPending(tokens) ?? { kind: "command.forward", argv: tokens };
+    }
+
+    if (action === "approve") {
+      return tryMapNodesApprove(tokens) ?? { kind: "command.forward", argv: tokens };
+    }
+
+    if (action === "reject") {
+      return tryMapNodesReject(tokens) ?? { kind: "command.forward", argv: tokens };
+    }
+
+    if (action === "rename") {
+      return tryMapNodesRename(tokens) ?? { kind: "command.forward", argv: tokens };
+    }
+  }
+
+  return {
+    kind: "command.forward",
+    argv: tokens,
+  };
+}
+
+function resolveTimeoutMs(timeoutMs: number | undefined): number {
+  if (typeof timeoutMs === "number" && Number.isFinite(timeoutMs) && timeoutMs > 0) {
+    return Math.floor(timeoutMs);
+  }
+  return DEFAULT_COMMAND_TIMEOUT_MS;
+}
+
+async function executeForwardedCommand(
+  argv: string[],
+  timeoutMs: number | undefined,
+): Promise<unknown> {
+  const result = await runPluginCommandWithTimeout({
+    argv,
+    timeoutMs: resolveTimeoutMs(timeoutMs),
+  });
+  if (result.code !== 0) {
+    throw new Error((result.stderr || result.stdout || `command failed (${result.code})`).trim());
+  }
+
+  const stdout = result.stdout.trim();
+  if (!stdout) {
+    return {};
+  }
+  try {
+    return JSON.parse(stdout);
+  } catch {
+    return stdout;
+  }
 }
 
 export async function executeBotmaxGatewayCommand(params: {
@@ -274,7 +722,7 @@ export async function executeBotmaxGatewayCommand(params: {
 
   let mapped: CommandMapping;
   try {
-    mapped = mapCommandToGatewayMethod(argv);
+    mapped = mapCommand(argv);
   } catch (error) {
     return {
       ok: false,
@@ -300,42 +748,84 @@ export async function executeBotmaxGatewayCommand(params: {
         throw new Error(`pairing request not found: ${requestId}`);
       }
       data = approved;
+    } else if (mapped.kind === "devices.reject") {
+      const rejected = await rejectDevicePairing(mapped.requestId);
+      if (!rejected) {
+        throw new Error(`pairing request not found: ${mapped.requestId}`);
+      }
+      data = rejected;
+    } else if (mapped.kind === "devices.remove") {
+      const removed = await removePairedDeviceLocally(mapped.deviceId);
+      if (!removed) {
+        throw new Error(`paired device not found: ${mapped.deviceId}`);
+      }
+      data = removed;
+    } else if (mapped.kind === "devices.clear") {
+      data = await clearDevicePairingLocally({
+        includePending: mapped.includePending,
+      });
+    } else if (mapped.kind === "devices.rotate") {
+      const rotated = await rotateDeviceTokenLocally({
+        deviceId: mapped.deviceId,
+        role: mapped.role,
+        scopes: mapped.scopes,
+      });
+      if (!rotated) {
+        throw new Error(`device token rotate failed for ${mapped.deviceId}/${mapped.role}`);
+      }
+      data = {
+        deviceId: mapped.deviceId,
+        role: rotated.role,
+        token: rotated.token,
+        scopes: rotated.scopes,
+        rotatedAtMs: rotated.rotatedAtMs ?? rotated.createdAtMs,
+      };
+    } else if (mapped.kind === "devices.revoke") {
+      const revoked = await revokeDeviceTokenLocally({
+        deviceId: mapped.deviceId,
+        role: mapped.role,
+      });
+      if (!revoked) {
+        throw new Error(`device token revoke failed for ${mapped.deviceId}/${mapped.role}`);
+      }
+      data = {
+        deviceId: mapped.deviceId,
+        role: revoked.role,
+        revokedAtMs: revoked.revokedAtMs,
+      };
+    } else if (mapped.kind === "nodes.pending") {
+      data = (await listNodePairingLocally()).pending;
+    } else if (mapped.kind === "nodes.approve") {
+      const approved = await approveNodePairingLocally(mapped.requestId);
+      if (!approved) {
+        throw new Error(`node pairing request not found: ${mapped.requestId}`);
+      }
+      data = approved;
+    } else if (mapped.kind === "nodes.reject") {
+      const rejected = await rejectNodePairingLocally(mapped.requestId);
+      if (!rejected) {
+        throw new Error(`node pairing request not found: ${mapped.requestId}`);
+      }
+      data = rejected;
+    } else if (mapped.kind === "nodes.rename") {
+      data = await renamePairedNodeLocally({
+        query: mapped.nodeQuery,
+        displayName: mapped.displayName,
+      });
     } else {
-      const argv = ["openclaw", "gateway", "call", mapped.method];
-      if (mapped.defaultParams && Object.keys(mapped.defaultParams).length > 0) {
-        argv.push("--params", JSON.stringify(mapped.defaultParams));
-      }
-      argv.push("--json");
-      const timeoutMs =
-        typeof params.timeoutMs === "number" && Number.isFinite(params.timeoutMs) && params.timeoutMs > 0
-          ? Math.floor(params.timeoutMs)
-          : DEFAULT_GATEWAY_CALL_TIMEOUT_MS;
-      const result = await runPluginCommandWithTimeout({ argv, timeoutMs });
-      if (result.code !== 0) {
-        throw new Error((result.stderr || result.stdout || `gateway call failed (${result.code})`).trim());
-      }
-      const stdout = result.stdout.trim();
-      if (!stdout) {
-        data = {};
-      } else {
-        try {
-          data = JSON.parse(stdout);
-        } catch {
-          data = stdout;
-        }
-      }
+      data = await executeForwardedCommand(mapped.argv, params.timeoutMs);
     }
 
     return {
       ok: true,
-      method: mapped.method,
+      method: "method" in mapped ? mapped.method : undefined,
       data,
       output: stringifyResult(data),
     };
   } catch (error) {
     return {
       ok: false,
-      method: mapped.method,
+      method: "method" in mapped ? mapped.method : undefined,
       output: error instanceof Error ? error.message : String(error),
     };
   }

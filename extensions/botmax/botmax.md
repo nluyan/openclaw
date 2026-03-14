@@ -69,15 +69,26 @@
 }
 ```
 
-## Supported OpenClaw Gateway Commands
+## Supported OpenClaw Commands
 - `openclaw devices list` -> `device.pair.list`
 - `openclaw devices approve <requestId>` -> `device.pair.approve`
 - `openclaw devices approve --latest` -> `device.pair.approve` with latest pending request
-- `openclaw gateway call <method> --params <json>` -> pass-through to gateway `method`
+- `openclaw devices reject <requestId>` -> `device.pair.reject`
+- `openclaw devices remove <deviceId>` -> local paired-device removal
+- `openclaw devices clear --yes [--pending]` -> local bulk device/pending cleanup
+- `openclaw devices rotate --device <deviceId> --role <role> [--scope <scope> ...]` -> local token rotation
+- `openclaw devices revoke --device <deviceId> --role <role>` -> local token revoke
+- `openclaw nodes pending` -> local pending node pairing list
+- `openclaw nodes approve <requestId>` -> local node pairing approval
+- `openclaw nodes reject <requestId>` -> local node pairing rejection
+- `openclaw nodes rename --node <id|name|ip> --name <displayName>` -> local paired-node rename
+- Any other first-class `openclaw <subcommand>` command is executed locally through the OpenClaw CLI.
 - `openclaw devices *` runs with CLI semantics and `operator.pairing` scope.
-- `openclaw gateway call *` forwards method/params directly and uses default gateway method scope resolution.
-- `openclaw devices list/approve` uses plugin-sdk pairing APIs directly.
-- `openclaw gateway call *` executes via local `openclaw gateway call ... --json` command fallback.
+- `openclaw devices list/approve/reject` uses plugin-sdk pairing APIs directly.
+- `openclaw devices remove/clear/rotate/revoke` uses botmax-local pairing state helpers directly.
+- `openclaw nodes pending/approve/reject` uses botmax-local node pairing state helpers directly.
+- `openclaw nodes rename` resolves the paired node locally by nodeId, display name, or remote IP, then updates the local node pairing state directly.
+- `openclaw gateway call *` is rejected. Server-side callers must send the corresponding direct CLI command instead.
 
 ## Protocol Rules
 - BotKeeper <-> OpenClaw only accepts JSON-RPC `botmax.transport` frames (`params.v=2`).
