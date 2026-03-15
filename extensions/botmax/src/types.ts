@@ -3,7 +3,6 @@ export interface BotmaxChannelConfig {
   name?: string;
   server?: string;
   textChunkLimit?: number;
-  doneToken?: string | null;
   accounts?: Record<string, BotmaxAccountRaw>;
 }
 
@@ -12,7 +11,6 @@ export interface BotmaxAccountRaw {
   name?: string;
   server?: string;
   textChunkLimit?: number;
-  doneToken?: string | null;
 }
 
 export interface ResolvedBotmaxAccount {
@@ -21,5 +19,4 @@ export interface ResolvedBotmaxAccount {
   enabled: boolean;
   server: string;
   textChunkLimit: number;
-  doneToken: string | null;
 }

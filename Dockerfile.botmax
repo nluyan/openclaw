@@ -1,0 +1,7 @@
+FROM ghcr.io/openclaw/openclaw:2026.3.12
+
+# Bundle BotMax plugin into OpenClaw built-in extensions.
+# /app/extensions is in the image layer, so plugin files are not hidden
+# when /home/node/.openclaw is mounted as a runtime volume.
+COPY --chown=node:node extensions/botmax/ /app/extensions/botmax/
+RUN rm -f /app/extensions/botmax/botmax.md

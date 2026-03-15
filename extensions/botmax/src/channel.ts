@@ -9,11 +9,16 @@ import {
   deleteAccountFromConfigSection,
   setAccountEnabledInConfigSection,
 } from "openclaw/plugin-sdk";
+import {
+  isAccountConfigured,
+  listAccountIds,
+  normalizeBotmaxId,
+  resolveAccount,
+} from "./accounts.js";
 import { BotmaxConfigSchema } from "./config-schema.js";
-import { isAccountConfigured, listAccountIds, normalizeBotmaxId, resolveAccount } from "./accounts.js";
-import { getBotmaxRuntime } from "./runtime.js";
 import { sendBotmaxText, suspendBotmaxHeartbeat } from "./connection.js";
 import { monitorBotmaxAccount } from "./monitor.js";
+import { getBotmaxRuntime } from "./runtime.js";
 import type { ResolvedBotmaxAccount } from "./types.js";
 
 const CHANNEL_ID = "botmax" as const;
@@ -62,7 +67,7 @@ export const botmaxPlugin: ChannelPlugin<ResolvedBotmaxAccount> = {
         cfg,
         sectionKey: "botmax",
         accountId,
-        clearBaseFields: ["server", "textChunkLimit", "doneToken", "name"],
+        clearBaseFields: ["server", "textChunkLimit", "name"],
       }),
     isConfigured: (account) => isAccountConfigured(account),
     describeAccount: (account): ChannelAccountSnapshot => ({
@@ -207,13 +212,13 @@ export const botmaxPlugin: ChannelPlugin<ResolvedBotmaxAccount> = {
         ctx.abortSignal.addEventListener(
           "abort",
           () => {
-          ctx.log?.info(`botmax[${account.accountId}] abort received; stopping channel`);
-          monitor.stop();
-          resolve();
-        },
-        { once: true },
-      );
-    });
+            ctx.log?.info(`botmax[${account.accountId}] abort received; stopping channel`);
+            monitor.stop();
+            resolve();
+          },
+          { once: true },
+        );
+      });
       ctx.log?.info(`botmax[${account.accountId}] channel stopped`);
     },
   },

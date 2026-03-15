@@ -6,8 +6,8 @@ import {
   formatTextWithAttachmentLinks,
   resolveOutboundMediaUrls,
 } from "openclaw/plugin-sdk";
-import { getBotmaxRuntime } from "./runtime.js";
 import { sendBotmaxText, suspendBotmaxHeartbeat } from "./connection.js";
+import { getBotmaxRuntime } from "./runtime.js";
 import type { ResolvedBotmaxAccount } from "./types.js";
 
 export async function handleBotmaxInbound(params: {
@@ -22,7 +22,18 @@ export async function handleBotmaxInbound(params: {
   runtime: RuntimeEnv;
   statusSink?: (patch: { lastInboundAt?: number; lastOutboundAt?: number }) => void;
 }): Promise<void> {
-  const { senderId, body, chatType, chatId, replyTargetId, requestId, account, config, runtime, statusSink } = params;
+  const {
+    senderId,
+    body,
+    chatType,
+    chatId,
+    replyTargetId,
+    requestId,
+    account,
+    config,
+    runtime,
+    statusSink,
+  } = params;
   const core = getBotmaxRuntime();
   const rawBody = body.trim();
   if (!rawBody) {
@@ -108,10 +119,7 @@ export async function handleBotmaxInbound(params: {
   let outboundDelivered = 0;
 
   const deliver = createNormalizedOutboundDeliverer(async (payload) => {
-    const combined = formatTextWithAttachmentLinks(
-      payload.text,
-      resolveOutboundMediaUrls(payload),
-    );
+    const combined = formatTextWithAttachmentLinks(payload.text, resolveOutboundMediaUrls(payload));
     if (!combined.trim()) {
       return;
     }
@@ -149,9 +157,6 @@ export async function handleBotmaxInbound(params: {
         runtime.log?.(
           `botmax[${account.accountId}] no outbound reply for sender ${senderId} (target=${replyTargetId})`,
         );
-      }
-      if (account.doneToken !== null) {
-        await sendBotmaxText(account.accountId, replyTargetId, account.doneToken, { requestId });
       }
     } finally {
       releaseHeartbeat();

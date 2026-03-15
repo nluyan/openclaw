@@ -3,10 +3,12 @@ import { DEFAULT_ACCOUNT_ID } from "openclaw/plugin-sdk";
 import type { BotmaxChannelConfig, ResolvedBotmaxAccount } from "./types.js";
 
 const DEFAULT_TEXT_CHUNK_LIMIT = 2000;
-const DEFAULT_DONE_TOKEN = "<<<done>>>";
 
 export function normalizeBotmaxId(value: string): string {
-  return value.trim().replace(/^botmax:/i, "").toLowerCase();
+  return value
+    .trim()
+    .replace(/^botmax:/i, "")
+    .toLowerCase();
 }
 
 function getChannelConfig(cfg: OpenClawConfig): BotmaxChannelConfig {
@@ -21,17 +23,18 @@ export function listAccountIds(cfg: OpenClawConfig): string[] {
   return [DEFAULT_ACCOUNT_ID];
 }
 
-export function resolveAccount(cfg: OpenClawConfig, accountId?: string | null): ResolvedBotmaxAccount {
+export function resolveAccount(
+  cfg: OpenClawConfig,
+  accountId?: string | null,
+): ResolvedBotmaxAccount {
   const resolvedAccountId = accountId?.trim() || DEFAULT_ACCOUNT_ID;
   const channelConfig = getChannelConfig(cfg);
   const accountOverride = channelConfig.accounts?.[resolvedAccountId] ?? {};
 
   const envServer = process.env.BOTMAX_SERVER;
   const envTextChunkLimit = process.env.BOTMAX_TEXT_CHUNK_LIMIT;
-  const envDoneToken = process.env.BOTMAX_DONE_TOKEN;
 
-  const server =
-    accountOverride.server ?? channelConfig.server ?? envServer ?? "";
+  const server = accountOverride.server ?? channelConfig.server ?? envServer ?? "";
   const textChunkLimitRaw =
     accountOverride.textChunkLimit ?? channelConfig.textChunkLimit ?? envTextChunkLimit;
   const textChunkLimit =
@@ -41,25 +44,15 @@ export function resolveAccount(cfg: OpenClawConfig, accountId?: string | null): 
         ? Number.parseInt(textChunkLimitRaw, 10)
         : DEFAULT_TEXT_CHUNK_LIMIT;
 
-  const doneToken =
-    accountOverride.doneToken ?? channelConfig.doneToken ?? envDoneToken ?? undefined;
-
-  const resolvedDoneToken =
-    doneToken === null
-      ? null
-      : typeof doneToken === "string" && doneToken.trim()
-        ? doneToken.trim()
-        : DEFAULT_DONE_TOKEN;
-
   return {
     accountId: resolvedAccountId,
     name: accountOverride.name ?? channelConfig.name,
     enabled: accountOverride.enabled ?? channelConfig.enabled ?? true,
     server,
-    textChunkLimit: Number.isFinite(textChunkLimit) && textChunkLimit > 0
-      ? textChunkLimit
-      : DEFAULT_TEXT_CHUNK_LIMIT,
-    doneToken: resolvedDoneToken,
+    textChunkLimit:
+      Number.isFinite(textChunkLimit) && textChunkLimit > 0
+        ? textChunkLimit
+        : DEFAULT_TEXT_CHUNK_LIMIT,
   };
 }
 

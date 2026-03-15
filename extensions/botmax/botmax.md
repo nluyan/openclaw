@@ -103,6 +103,7 @@
 - BotKeeper consumes `chat.message` and `command.result`.
 - For `chatType=group`, OpenClaw routes and replies by `chatId` (not by `from`).
 - For `chatType=direct`, OpenClaw routes and replies by `from`.
+- Botmax chat replies end with the actual outbound message only; the plugin does not append any `<<<done>>>` marker.
 
 ## Troubleshooting Reconnect Loops
 
