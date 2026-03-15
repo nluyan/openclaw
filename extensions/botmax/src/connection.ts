@@ -1,7 +1,11 @@
 import WebSocket from "ws";
-import type { ResolvedBotmaxAccount } from "./types.js";
-import { formatBotmaxOutboundCommandResult, formatBotmaxOutboundText } from "./message-format.js";
+import {
+  formatBotmaxOutboundCommandResult,
+  formatBotmaxOutboundMessage,
+  type BotmaxOutboundAttachmentInput,
+} from "./message-format.js";
 import { getBotmaxRuntime } from "./runtime.js";
+import type { ResolvedBotmaxAccount } from "./types.js";
 
 export type BotmaxConnection = {
   accountId: string;
@@ -19,6 +23,13 @@ const lastSenderPrefixByAccount = new Map<string, string>();
 type BotmaxSendEnvelopeOptions = {
   requestId?: string | number | null;
   senderId?: string;
+  chatType?: "direct" | "group" | "channel";
+  conversationId?: string;
+  platform?: string;
+  surface?: string;
+  botUsername?: string;
+  threadId?: string | number;
+  messageId?: string;
 };
 
 export function rememberBotmaxSender(accountId: string, senderId: string): void {
@@ -62,16 +73,7 @@ export function clearActiveConnection(accountId: string): void {
   activeConnections.delete(accountId);
 }
 
-export async function sendBotmaxText(
-  accountId: string,
-  recipientId: string,
-  text: string,
-  options?: BotmaxSendEnvelopeOptions,
-): Promise<void> {
-  const conn = getActiveConnection(accountId);
-  if (!conn) {
-    throw new Error("Botmax connection is not active");
-  }
+function normalizeBotmaxRecipient(accountId: string, recipientId: string): string {
   let effectiveRecipient = recipientId.trim();
   if (effectiveRecipient && !effectiveRecipient.includes(":") && effectiveRecipient !== "all") {
     const prefix = lastSenderPrefixByAccount.get(accountId);
@@ -79,33 +81,90 @@ export async function sendBotmaxText(
       effectiveRecipient = `${prefix}:${effectiveRecipient}`;
     }
   }
-  const payload = formatBotmaxOutboundText({
-    recipientId: effectiveRecipient,
-    text,
-    requestId: options?.requestId,
-    senderId: options?.senderId,
-  });
+  return effectiveRecipient;
+}
+
+function logBotmaxOutboundPayload(params: {
+  accountId: string;
+  conn: BotmaxConnection;
+  payload: string;
+  recipientId: string;
+  effectiveRecipient: string;
+}): void {
   try {
-    conn.log?.(`botmax[${accountId}] outbound raw: ${payload}`);
-    if (!conn.log) {
+    params.conn.log?.(`botmax[${params.accountId}] outbound raw: ${params.payload}`);
+    if (!params.conn.log) {
       const core = getBotmaxRuntime();
       const logger = core.logging.getChildLogger({ module: "botmax" });
-      logger.info(`botmax[${accountId}] outbound raw: ${payload}`);
+      logger.info(`botmax[${params.accountId}] outbound raw: ${params.payload}`);
     }
-    if (effectiveRecipient !== recipientId) {
-      conn.log?.(
-        `botmax[${accountId}] normalized recipient '${recipientId}' -> '${effectiveRecipient}'`,
+    if (params.effectiveRecipient !== params.recipientId) {
+      params.conn.log?.(
+        `botmax[${params.accountId}] normalized recipient '${params.recipientId}' -> '${params.effectiveRecipient}'`,
       );
-    } else if (effectiveRecipient !== "all" && !effectiveRecipient.includes(":")) {
-      conn.log?.(
-        `botmax[${accountId}] recipient missing channel prefix: '${recipientId}'`,
+    } else if (params.effectiveRecipient !== "all" && !params.effectiveRecipient.includes(":")) {
+      params.conn.log?.(
+        `botmax[${params.accountId}] recipient missing channel prefix: '${params.recipientId}'`,
       );
     }
   } catch {
     // Ignore logging failures to avoid blocking outbound delivery.
   }
+}
+
+export async function sendBotmaxMessage(
+  accountId: string,
+  recipientId: string,
+  message: {
+    text?: string;
+    attachments?: BotmaxOutboundAttachmentInput[];
+  },
+  options?: BotmaxSendEnvelopeOptions,
+): Promise<void> {
+  const conn = getActiveConnection(accountId);
+  if (!conn) {
+    throw new Error("Botmax connection is not active");
+  }
+  const effectiveRecipient = normalizeBotmaxRecipient(accountId, recipientId);
+  const payload = formatBotmaxOutboundMessage({
+    recipientId: effectiveRecipient,
+    text: message.text,
+    attachments: message.attachments,
+    requestId: options?.requestId,
+    senderId: options?.senderId,
+    chatType: options?.chatType,
+    conversationId: options?.conversationId,
+    platform: options?.platform,
+    surface: options?.surface,
+    botUsername: options?.botUsername,
+    threadId: options?.threadId,
+    messageId: options?.messageId,
+  });
+  logBotmaxOutboundPayload({
+    accountId,
+    conn,
+    payload,
+    recipientId,
+    effectiveRecipient,
+  });
   await conn.sendText(payload);
   conn.statusSink?.({ lastOutboundAt: Date.now() });
+}
+
+export async function sendBotmaxText(
+  accountId: string,
+  recipientId: string,
+  text: string,
+  options?: BotmaxSendEnvelopeOptions,
+): Promise<void> {
+  await sendBotmaxMessage(
+    accountId,
+    recipientId,
+    {
+      text,
+    },
+    options,
+  );
 }
 
 export async function sendBotmaxCommandResult(params: {
@@ -118,12 +177,17 @@ export async function sendBotmaxCommandResult(params: {
   data?: unknown;
   requestId?: string | number | null;
   senderId?: string;
+  chatType?: "direct" | "group" | "channel";
+  conversationId?: string;
+  platform?: string;
+  surface?: string;
+  threadId?: string | number;
 }): Promise<void> {
   const conn = getActiveConnection(params.accountId);
   if (!conn) {
     throw new Error("Botmax connection is not active");
   }
-  const recipientId = params.recipientId.trim();
+  const recipientId = normalizeBotmaxRecipient(params.accountId, params.recipientId);
   if (!recipientId) {
     throw new Error("Botmax command result recipientId is required");
   }
@@ -136,9 +200,14 @@ export async function sendBotmaxCommandResult(params: {
     data: params.data,
     requestId: params.requestId,
     senderId: params.senderId,
+    chatType: params.chatType,
+    conversationId: params.conversationId,
+    platform: params.platform,
+    surface: params.surface,
+    threadId: params.threadId,
   });
   try {
-    conn.log?.(`botmax[${params.accountId}] outbound command result: ${payload}`);
+    conn.log?.(`botmax[${params.accountId}] outbound command result raw: ${payload}`);
   } catch {
     // Ignore logging failures to avoid blocking outbound delivery.
   }
@@ -200,17 +269,23 @@ export function createBotmaxSender(ws: WebSocket): {
 
   return {
     sendText: (text: string) =>
-      enqueue(async () => {
-        await sendRaw(text);
-      }, { countOutbound: true }),
+      enqueue(
+        async () => {
+          await sendRaw(text);
+        },
+        { countOutbound: true },
+      ),
     sendHeartbeat: (text: string) =>
-      enqueue(async () => {
-        if (outboundPending > 0 || heartbeatBlockCount > 0) {
-          return false;
-        }
-        await sendRaw(text);
-        return true;
-      }, { countOutbound: false }),
+      enqueue(
+        async () => {
+          if (outboundPending > 0 || heartbeatBlockCount > 0) {
+            return false;
+          }
+          await sendRaw(text);
+          return true;
+        },
+        { countOutbound: false },
+      ),
     setHeartbeatBlocked: (blocked: boolean) => {
       heartbeatBlockCount += blocked ? 1 : -1;
       if (heartbeatBlockCount < 0) {

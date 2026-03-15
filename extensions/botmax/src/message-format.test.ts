@@ -1,87 +1,332 @@
 import { describe, expect, it } from "vitest";
 import {
   formatBotmaxOutboundCommandResult,
+  formatBotmaxOutboundMessage,
   formatBotmaxOutboundText,
   parseBotmaxInboundText,
 } from "./message-format.js";
 
 describe("botmax message format", () => {
-  it("parses json-rpc chat frames", () => {
+  it("parses v3 chat frames with sender metadata", () => {
     const frame = JSON.stringify({
       jsonrpc: "2.0",
       method: "botmax.transport",
       id: "req-1",
       params: {
-        v: 2,
+        v: 3,
         type: "chat.message",
-        from: "telegram:123",
-        to: "openclaw:botmax",
-        text: "hi",
+        transport: {
+          bridge: "botmax",
+          receivedAtMs: 1773561600000,
+        },
+        origin: {
+          platform: "telegram",
+          surface: "telegram",
+          botUsername: "demo_bot",
+        },
+        conversation: {
+          id: "telegram:123",
+          nativeId: "123",
+          kind: "direct",
+          replyTargetId: "telegram:123",
+        },
+        sender: {
+          id: "telegram:123",
+          nativeId: "123",
+          displayName: "Alice",
+          username: "alice_demo",
+          isBot: false,
+        },
+        message: {
+          id: "tg:msg:1",
+          nativeId: "1",
+          fullId: "telegram:123:1",
+          text: "hi",
+          createdAtMs: 1773561601000,
+          mentions: {
+            botMentioned: false,
+            mentionedIds: [],
+          },
+          attachments: [],
+        },
+        auth: {
+          deliveryAuthenticated: true,
+          commandAuthorized: true,
+        },
       },
     });
     const parsed = parseBotmaxInboundText(frame);
     expect(parsed).toEqual({
       kind: "chat",
       senderId: "telegram:123",
-      body: "hi",
+      senderName: "Alice",
+      senderUsername: "alice_demo",
+      provider: "telegram",
+      surface: "telegram",
+      botUsername: "demo_bot",
+      conversationId: "telegram:123",
       chatType: "direct",
       chatId: undefined,
+      conversationTitle: undefined,
       replyTargetId: "telegram:123",
       requestId: "req-1",
+      messageId: "tg:msg:1",
+      messageFullId: "telegram:123:1",
+      timestampMs: 1773561601000,
+      threadId: undefined,
+      replyToId: undefined,
+      replyToBody: undefined,
+      replyToSender: undefined,
+      wasMentioned: false,
+      commandAuthorized: true,
+      transcript: undefined,
+      body: "hi",
     });
   });
 
-  it("parses json-rpc command frames", () => {
+  it("parses v3 command frames", () => {
     const frame = JSON.stringify({
       jsonrpc: "2.0",
       method: "botmax.transport",
       id: 42,
       params: {
-        v: 2,
+        v: 3,
         type: "command.exec",
-        from: "telegram:123",
-        to: "openclaw:botmax",
-        command: "openclaw devices list",
-        timeoutMs: 9000,
+        transport: {
+          bridge: "botmax",
+          receivedAtMs: 1773561600000,
+        },
+        origin: {
+          platform: "telegram",
+          surface: "telegram",
+        },
+        conversation: {
+          id: "telegram:123",
+          nativeId: "123",
+          kind: "direct",
+          replyTargetId: "telegram:123",
+        },
+        sender: {
+          id: "telegram:123",
+          nativeId: "123",
+          displayName: "Alice",
+        },
+        command: {
+          text: "openclaw devices list",
+          timeoutMs: 9000,
+        },
+        auth: {
+          deliveryAuthenticated: true,
+          commandAuthorized: true,
+        },
       },
     });
     const parsed = parseBotmaxInboundText(frame);
     expect(parsed).toEqual({
       kind: "command",
       senderId: "telegram:123",
-      command: "openclaw devices list",
-      timeoutMs: 9000,
+      senderName: "Alice",
+      senderUsername: undefined,
+      provider: "telegram",
+      surface: "telegram",
+      botUsername: undefined,
+      conversationId: "telegram:123",
       chatType: "direct",
       chatId: undefined,
+      conversationTitle: undefined,
       replyTargetId: "telegram:123",
       requestId: 42,
+      messageId: undefined,
+      messageFullId: undefined,
+      timestampMs: expect.any(Number),
+      threadId: undefined,
+      replyToId: undefined,
+      replyToBody: undefined,
+      replyToSender: undefined,
+      wasMentioned: false,
+      commandAuthorized: true,
+      transcript: undefined,
+      command: "openclaw devices list",
+      timeoutMs: 9000,
     });
   });
 
-  it("parses group chat metadata and routes replies to chatId", () => {
+  it("parses group chat metadata and routes replies to conversation id", () => {
     const frame = JSON.stringify({
       jsonrpc: "2.0",
       method: "botmax.transport",
       params: {
-        v: 2,
+        v: 3,
         type: "chat.message",
-        from: "telegram:123",
-        senderId: "telegram:123",
-        to: "openclaw:botmax",
-        text: "group hi",
-        chatType: "group",
-        chatId: "telegram:-100001",
+        transport: {
+          bridge: "botmax",
+          receivedAtMs: 1773561600000,
+        },
+        origin: {
+          platform: "telegram",
+        },
+        conversation: {
+          id: "telegram:-100001",
+          nativeId: "-100001",
+          kind: "group",
+          replyTargetId: "telegram:-100001",
+          title: "Release Squad",
+          threadId: "77",
+        },
+        sender: {
+          id: "telegram:123",
+          displayName: "Alice",
+        },
+        message: {
+          id: "tg:msg:2",
+          text: "group hi",
+          createdAtMs: 1773561602000,
+          replyTo: {
+            id: "tg:msg:1",
+            senderId: "telegram:456",
+            senderLabel: "Bob",
+            text: "old message",
+            isQuote: false,
+          },
+          mentions: {
+            botMentioned: true,
+            mentionedIds: ["telegram:bot:1"],
+          },
+          attachments: [],
+        },
+        auth: {
+          deliveryAuthenticated: true,
+          commandAuthorized: true,
+        },
       },
     });
     const parsed = parseBotmaxInboundText(frame);
     expect(parsed).toEqual({
       kind: "chat",
       senderId: "telegram:123",
-      body: "group hi",
+      senderName: "Alice",
+      senderUsername: undefined,
+      provider: "telegram",
+      surface: "telegram",
+      botUsername: undefined,
+      conversationId: "telegram:-100001",
       chatType: "group",
       chatId: "telegram:-100001",
+      conversationTitle: "Release Squad",
       replyTargetId: "telegram:-100001",
       requestId: undefined,
+      messageId: "tg:msg:2",
+      messageFullId: undefined,
+      timestampMs: 1773561602000,
+      threadId: "77",
+      replyToId: "tg:msg:1",
+      replyToBody: "old message",
+      replyToSender: "Bob",
+      wasMentioned: true,
+      commandAuthorized: true,
+      transcript: undefined,
+      body: "group hi",
+    });
+  });
+
+  it("parses attachment-bearing chat frames and derives transcript/body summary", () => {
+    const frame = JSON.stringify({
+      jsonrpc: "2.0",
+      method: "botmax.transport",
+      params: {
+        v: 3,
+        type: "chat.message",
+        transport: {
+          bridge: "botmax",
+          receivedAtMs: 1773561600000,
+        },
+        origin: {
+          platform: "telegram",
+          surface: "telegram",
+        },
+        conversation: {
+          id: "telegram:123",
+          nativeId: "123",
+          kind: "direct",
+          replyTargetId: "telegram:123",
+        },
+        sender: {
+          id: "telegram:123",
+          displayName: "Alice",
+        },
+        message: {
+          id: "tg:msg:3",
+          createdAtMs: 1773561603000,
+          mentions: {
+            botMentioned: false,
+            mentionedIds: [],
+          },
+          attachments: [
+            {
+              id: "att-1",
+              kind: "audio",
+              fetchUrl: "https://r2.example.test/voice.ogg",
+              mimeType: "audio/ogg",
+              transcript: "voice transcript",
+              durationMs: 3200,
+              deliveryHints: {
+                sendAs: "voice",
+              },
+            },
+          ],
+        },
+        auth: {
+          deliveryAuthenticated: true,
+          commandAuthorized: false,
+        },
+      },
+    });
+    const parsed = parseBotmaxInboundText(frame);
+    expect(parsed).toEqual({
+      kind: "chat",
+      senderId: "telegram:123",
+      senderName: "Alice",
+      senderUsername: undefined,
+      provider: "telegram",
+      surface: "telegram",
+      botUsername: undefined,
+      conversationId: "telegram:123",
+      chatType: "direct",
+      chatId: undefined,
+      conversationTitle: undefined,
+      replyTargetId: "telegram:123",
+      requestId: undefined,
+      messageId: "tg:msg:3",
+      messageFullId: undefined,
+      timestampMs: 1773561603000,
+      threadId: undefined,
+      replyToId: undefined,
+      replyToBody: undefined,
+      replyToSender: undefined,
+      wasMentioned: false,
+      commandAuthorized: false,
+      transcript: "voice transcript",
+      attachments: [
+        {
+          id: "att-1",
+          kind: "audio",
+          name: undefined,
+          mimeType: "audio/ogg",
+          sizeBytes: undefined,
+          fetchUrl: "https://r2.example.test/voice.ogg",
+          sharedPath: undefined,
+          inlineBase64: undefined,
+          caption: undefined,
+          transcript: "voice transcript",
+          width: undefined,
+          height: undefined,
+          durationMs: 3200,
+          deliveryHints: {
+            sendAs: "voice",
+          },
+        },
+      ],
+      body: "[Audio]\nTranscript:\nvoice transcript",
     });
   });
 
@@ -89,7 +334,7 @@ describe("botmax message format", () => {
     expect(parseBotmaxInboundText("[[[telegram:123]]]hello")).toBeNull();
   });
 
-  it("formats outbound chat as json-rpc", () => {
+  it("formats outbound chat as v3 json-rpc", () => {
     const frame = JSON.parse(
       formatBotmaxOutboundText({
         recipientId: "telegram:123",
@@ -97,21 +342,105 @@ describe("botmax message format", () => {
         requestId: "req-2",
       }),
     );
-    expect(frame).toEqual({
+    expect(frame).toMatchObject({
       jsonrpc: "2.0",
       method: "botmax.transport",
       id: "req-2",
       params: {
-        v: 2,
+        v: 3,
         type: "chat.message",
-        from: "openclaw:botmax",
-        to: "telegram:123",
-        text: "hello",
+        transport: {
+          bridge: "botmax",
+          receivedAtMs: expect.any(Number),
+        },
+        origin: {
+          platform: "telegram",
+          surface: "telegram",
+        },
+        conversation: {
+          id: "telegram:123",
+          nativeId: "123",
+          kind: "direct",
+          replyTargetId: "telegram:123",
+        },
+        sender: {
+          id: "openclaw:botmax",
+          nativeId: "botmax",
+          displayName: "openclaw:botmax",
+        },
+        message: {
+          text: "hello",
+          createdAtMs: expect.any(Number),
+          mentions: {
+            botMentioned: false,
+            mentionedIds: [],
+          },
+        },
+        auth: {
+          deliveryAuthenticated: true,
+          commandAuthorized: false,
+        },
+      },
+    });
+    expect(frame.params.message.id).toMatch(/^botmax:msg:/);
+    expect(frame.params.message.fullId).toContain("telegram:123:");
+  });
+
+  it("formats outbound attachment messages as v3 json-rpc", () => {
+    const frame = JSON.parse(
+      formatBotmaxOutboundMessage({
+        recipientId: "telegram:123",
+        text: "see attachment",
+        attachments: [
+          {
+            id: "att-1",
+            kind: "image",
+            fetchUrl: "https://cdn.example.test/photo.jpg",
+            mimeType: "image/jpeg",
+            width: 1280,
+            height: 720,
+            deliveryHints: {
+              sendAs: "photo",
+            },
+          },
+        ],
+      }),
+    );
+    expect(frame).toMatchObject({
+      jsonrpc: "2.0",
+      method: "botmax.transport",
+      params: {
+        v: 3,
+        type: "chat.message",
+        origin: {
+          platform: "telegram",
+          surface: "telegram",
+        },
+        conversation: {
+          id: "telegram:123",
+          replyTargetId: "telegram:123",
+        },
+        message: {
+          text: "see attachment",
+          attachments: [
+            {
+              id: "att-1",
+              kind: "image",
+              fetchUrl: "https://cdn.example.test/photo.jpg",
+              mimeType: "image/jpeg",
+              width: 1280,
+              height: 720,
+              deliveryHints: {
+                sendAs: "photo",
+              },
+            },
+          ],
+        },
       },
     });
   });
 
-  it("formats outbound command result as json-rpc", () => {
+  it("formats outbound command result as v3 json-rpc", () => {
     const frame = JSON.parse(
       formatBotmaxOutboundCommandResult({
         recipientId: "telegram:123",
@@ -122,19 +451,33 @@ describe("botmax message format", () => {
         data: [],
       }),
     );
-    expect(frame).toEqual({
+    expect(frame).toMatchObject({
       jsonrpc: "2.0",
       method: "botmax.transport",
       params: {
-        v: 2,
+        v: 3,
         type: "command.result",
-        from: "openclaw:botmax",
-        to: "telegram:123",
-        command: "openclaw devices list",
-        method: "device.pair.list",
-        ok: true,
-        output: "[]",
-        data: [],
+        transport: {
+          bridge: "botmax",
+          receivedAtMs: expect.any(Number),
+        },
+        origin: {
+          platform: "telegram",
+          surface: "telegram",
+        },
+        conversation: {
+          id: "telegram:123",
+          replyTargetId: "telegram:123",
+        },
+        command: {
+          text: "openclaw devices list",
+          method: "device.pair.list",
+        },
+        result: {
+          ok: true,
+          output: "[]",
+          data: [],
+        },
       },
     });
   });

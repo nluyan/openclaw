@@ -2,49 +2,185 @@ const HEARTBEAT_PING = "<<<ping>>>";
 const HEARTBEAT_PONG = "<<<pong>>>";
 const BOTMAX_JSONRPC_VERSION = "2.0";
 const BOTMAX_TRANSPORT_METHOD = "botmax.transport";
-const BOTMAX_TRANSPORT_VERSION = 2;
+const BOTMAX_TRANSPORT_VERSION = 3;
 const CHAT_MESSAGE_TYPE = "chat.message";
 const COMMAND_EXEC_TYPE = "command.exec";
 const COMMAND_RESULT_TYPE = "command.result";
 const CHAT_TYPE_DIRECT = "direct";
 const CHAT_TYPE_GROUP = "group";
+const CHAT_TYPE_CHANNEL = "channel";
 
 type JsonRpcId = string | number | null;
-type BotmaxChatType = typeof CHAT_TYPE_DIRECT | typeof CHAT_TYPE_GROUP;
+type BotmaxChatType = typeof CHAT_TYPE_DIRECT | typeof CHAT_TYPE_GROUP | typeof CHAT_TYPE_CHANNEL;
+export type BotmaxAttachmentKind = "image" | "audio" | "video" | "file" | "sticker" | "location";
+export type BotmaxAttachmentSendAs =
+  | "photo"
+  | "image"
+  | "voice"
+  | "audio"
+  | "video"
+  | "video_note"
+  | "document"
+  | "sticker"
+  | "location";
+
+type BotmaxTransportContext = {
+  bridge: "botmax";
+  receivedAtMs: number;
+  connectionId?: string;
+  dedupeKey?: string;
+  traceId?: string;
+};
+
+type BotmaxOriginContext = {
+  platform: string;
+  surface?: string;
+  accountId?: string;
+  botId?: string;
+  botUsername?: string;
+};
+
+type BotmaxConversationContext = {
+  id: string;
+  nativeId?: string;
+  kind: BotmaxChatType;
+  replyTargetId: string;
+  title?: string;
+  channelName?: string;
+  spaceName?: string;
+  threadId?: string | number;
+  threadLabel?: string;
+  parentId?: string;
+  isForum?: boolean;
+};
+
+type BotmaxResultConversationContext = {
+  id: string;
+  replyTargetId: string;
+  threadId?: string | number;
+};
+
+type BotmaxSenderContext = {
+  id: string;
+  nativeId?: string;
+  displayName?: string;
+  username?: string;
+  tag?: string;
+  e164?: string;
+  isBot?: boolean;
+};
+
+type BotmaxAuthContext = {
+  deliveryAuthenticated: boolean;
+  commandAuthorized: boolean;
+  senderIsOwner?: boolean;
+  scopes?: string[];
+};
+
+type BotmaxReplyToContext = {
+  id: string;
+  nativeId?: string;
+  senderId?: string;
+  senderLabel?: string;
+  text?: string;
+  isQuote?: boolean;
+};
+
+type BotmaxMentionsContext = {
+  botMentioned: boolean;
+  mentionedIds: string[];
+};
+
+type BotmaxAttachmentDeliveryHints = {
+  sendAs?: BotmaxAttachmentSendAs;
+};
+
+export type BotmaxBinaryAttachment = {
+  id: string;
+  kind: Exclude<BotmaxAttachmentKind, "location">;
+  name?: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  fetchUrl?: string;
+  sharedPath?: string;
+  inlineBase64?: string;
+  caption?: string;
+  transcript?: string;
+  width?: number;
+  height?: number;
+  durationMs?: number;
+  deliveryHints?: BotmaxAttachmentDeliveryHints;
+};
+
+export type BotmaxLocationAttachment = {
+  id: string;
+  kind: "location";
+  label?: string;
+  latitude: number;
+  longitude: number;
+  deliveryHints?: BotmaxAttachmentDeliveryHints;
+};
+
+export type BotmaxAttachment = BotmaxBinaryAttachment | BotmaxLocationAttachment;
+export type BotmaxInboundAttachment = BotmaxAttachment;
+export type BotmaxOutboundAttachmentInput = BotmaxAttachment;
+
+type BotmaxMessageContext = {
+  id: string;
+  nativeId?: string;
+  fullId?: string;
+  text?: string;
+  createdAtMs: number;
+  editedAtMs?: number;
+  replyTo?: BotmaxReplyToContext;
+  mentions: BotmaxMentionsContext;
+  attachments?: BotmaxAttachment[];
+};
 
 type BotmaxTransportChatMessage = {
-  v: number;
+  v: typeof BOTMAX_TRANSPORT_VERSION;
   type: typeof CHAT_MESSAGE_TYPE;
-  from: string;
-  to: string;
-  text: string;
-  chatType?: BotmaxChatType;
-  chatId?: string;
-  senderId?: string;
+  transport: BotmaxTransportContext;
+  origin: BotmaxOriginContext;
+  conversation: BotmaxConversationContext;
+  sender: BotmaxSenderContext;
+  message: BotmaxMessageContext;
+  auth: BotmaxAuthContext;
+  extensions?: Record<string, unknown>;
 };
 
 type BotmaxTransportCommandExec = {
-  v: number;
+  v: typeof BOTMAX_TRANSPORT_VERSION;
   type: typeof COMMAND_EXEC_TYPE;
-  from: string;
-  to?: string;
-  command: string;
-  timeoutMs?: number;
-  chatType?: BotmaxChatType;
-  chatId?: string;
-  senderId?: string;
+  transport: BotmaxTransportContext;
+  origin: BotmaxOriginContext;
+  conversation: BotmaxConversationContext;
+  sender: BotmaxSenderContext;
+  message?: BotmaxMessageContext;
+  command: {
+    text: string;
+    timeoutMs?: number;
+  };
+  auth: BotmaxAuthContext;
+  extensions?: Record<string, unknown>;
 };
 
 type BotmaxTransportCommandResult = {
-  v: number;
+  v: typeof BOTMAX_TRANSPORT_VERSION;
   type: typeof COMMAND_RESULT_TYPE;
-  from: string;
-  to: string;
-  command: string;
-  method?: string;
-  ok: boolean;
-  output: string;
-  data?: unknown;
+  transport: BotmaxTransportContext;
+  origin: BotmaxOriginContext;
+  conversation: BotmaxResultConversationContext;
+  command: {
+    text: string;
+    method?: string;
+  };
+  result: {
+    ok: boolean;
+    output: string;
+    data?: unknown;
+  };
+  extensions?: Record<string, unknown>;
 };
 
 type BotmaxTransportParams =
@@ -59,26 +195,42 @@ type BotmaxJsonRpcFrame = {
   id?: JsonRpcId;
 };
 
+type BotmaxInboundBase = {
+  senderId: string;
+  senderName: string;
+  senderUsername?: string;
+  provider: string;
+  surface: string;
+  botUsername?: string;
+  conversationId: string;
+  chatType: BotmaxChatType;
+  chatId?: string;
+  conversationTitle?: string;
+  replyTargetId: string;
+  requestId?: JsonRpcId;
+  messageId?: string;
+  messageFullId?: string;
+  timestampMs: number;
+  threadId?: string | number;
+  replyToId?: string;
+  replyToBody?: string;
+  replyToSender?: string;
+  wasMentioned: boolean;
+  commandAuthorized: boolean;
+  transcript?: string;
+  attachments?: BotmaxAttachment[];
+};
+
 export type BotmaxInboundMessage =
-  | {
+  | (BotmaxInboundBase & {
       kind: "chat";
-      senderId: string;
       body: string;
-      chatType: BotmaxChatType;
-      chatId?: string;
-      replyTargetId: string;
-      requestId?: JsonRpcId;
-    }
-  | {
+    })
+  | (BotmaxInboundBase & {
       kind: "command";
-      senderId: string;
       command: string;
       timeoutMs?: number;
-      chatType: BotmaxChatType;
-      chatId?: string;
-      replyTargetId: string;
-      requestId?: JsonRpcId;
-    };
+    });
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -97,11 +249,509 @@ function normalizeJsonRpcId(value: unknown): JsonRpcId | undefined {
   return undefined;
 }
 
+function normalizeNonEmptyString(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed || undefined;
+}
+
+function normalizeTimestamp(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? Math.floor(value)
+    : undefined;
+}
+
+function normalizeBoolean(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function normalizeThreadId(value: unknown): string | number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.floor(value);
+  }
+  return normalizeNonEmptyString(value);
+}
+
 function normalizeChatType(value: unknown): BotmaxChatType {
   if (typeof value !== "string") {
     return CHAT_TYPE_DIRECT;
   }
-  return value.trim().toLowerCase() === CHAT_TYPE_GROUP ? CHAT_TYPE_GROUP : CHAT_TYPE_DIRECT;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === CHAT_TYPE_GROUP) {
+    return CHAT_TYPE_GROUP;
+  }
+  if (normalized === CHAT_TYPE_CHANNEL) {
+    return CHAT_TYPE_CHANNEL;
+  }
+  return CHAT_TYPE_DIRECT;
+}
+
+function normalizeNativeId(scopedId: string): string | undefined {
+  const separator = scopedId.indexOf(":");
+  if (separator < 0 || separator === scopedId.length - 1) {
+    return undefined;
+  }
+  const nativeId = scopedId.slice(separator + 1).trim();
+  return nativeId || undefined;
+}
+
+function inferPlatformFromScopedId(scopedId: string): string {
+  const separator = scopedId.indexOf(":");
+  if (separator <= 0) {
+    return "botmax";
+  }
+  return scopedId.slice(0, separator).trim().toLowerCase() || "botmax";
+}
+
+function inferChatTypeFromRecipient(recipientId: string): BotmaxChatType {
+  if (recipientId === "all") {
+    return CHAT_TYPE_CHANNEL;
+  }
+  const nativeId = normalizeNativeId(recipientId) ?? recipientId;
+  if (nativeId.startsWith("-")) {
+    return CHAT_TYPE_GROUP;
+  }
+  return CHAT_TYPE_DIRECT;
+}
+
+function buildTransportContext(now: number, dedupeKey?: string): BotmaxTransportContext {
+  return {
+    bridge: "botmax",
+    receivedAtMs: now,
+    dedupeKey,
+  };
+}
+
+function buildOriginContext(params: {
+  platform?: string;
+  surface?: string;
+  botUsername?: string;
+}): BotmaxOriginContext {
+  const platform = normalizeNonEmptyString(params.platform) ?? "botmax";
+  const surface = normalizeNonEmptyString(params.surface) ?? platform;
+  const botUsername = normalizeNonEmptyString(params.botUsername);
+  return {
+    platform,
+    surface,
+    botUsername,
+  };
+}
+
+function buildConversationContext(params: {
+  recipientId: string;
+  chatType?: BotmaxChatType;
+  conversationId?: string;
+  threadId?: string | number;
+}): BotmaxConversationContext {
+  const conversationId = normalizeNonEmptyString(params.conversationId) ?? params.recipientId;
+  const chatType = params.chatType ?? inferChatTypeFromRecipient(conversationId);
+  return {
+    id: conversationId,
+    nativeId: normalizeNativeId(conversationId),
+    kind: chatType,
+    replyTargetId: params.recipientId,
+    threadId: params.threadId,
+  };
+}
+
+function buildMessageContext(params: {
+  text?: string;
+  attachments?: BotmaxAttachment[];
+  createdAtMs: number;
+  conversationId: string;
+  messageId?: string;
+}): BotmaxMessageContext {
+  const text = normalizeNonEmptyString(params.text);
+  const attachments = params.attachments?.filter(Boolean) ?? [];
+  if (!text && attachments.length === 0) {
+    throw new Error("Botmax chat message requires text or attachments");
+  }
+  const messageId =
+    normalizeNonEmptyString(params.messageId) ??
+    `botmax:msg:${params.createdAtMs}:${Math.random().toString(36).slice(2, 10)}`;
+  return {
+    id: messageId,
+    fullId: `${params.conversationId}:${messageId}`,
+    text,
+    createdAtMs: params.createdAtMs,
+    mentions: {
+      botMentioned: false,
+      mentionedIds: [],
+    },
+    attachments: attachments.length > 0 ? attachments : undefined,
+  };
+}
+
+function buildAttachmentSummary(attachments: BotmaxAttachment[]): string {
+  return attachments
+    .map((attachment, index) => {
+      const suffix = attachments.length > 1 ? ` ${index + 1}/${attachments.length}` : "";
+      if (attachment.kind === "location") {
+        const label =
+          normalizeNonEmptyString(attachment.label) ??
+          `${attachment.latitude.toFixed(6)}, ${attachment.longitude.toFixed(6)}`;
+        return `[Location${suffix}]\n${label}`;
+      }
+
+      const title = `[${attachment.kind[0]?.toUpperCase() ?? ""}${attachment.kind.slice(1)}${suffix}]`;
+      const lines = [title];
+      const caption = normalizeNonEmptyString(attachment.caption);
+      if (caption) {
+        lines.push(`Caption:\n${caption}`);
+      }
+      const transcript = normalizeNonEmptyString(attachment.transcript);
+      if (transcript) {
+        lines.push(`Transcript:\n${transcript}`);
+      }
+      if (!caption && !transcript) {
+        const fallback =
+          normalizeNonEmptyString(attachment.name) ?? normalizeNonEmptyString(attachment.mimeType);
+        if (fallback) {
+          lines.push(fallback);
+        }
+      }
+      return lines.join("\n");
+    })
+    .join("\n\n")
+    .trim();
+}
+
+function buildMessageBody(text: string | undefined, attachments: BotmaxAttachment[]): string {
+  const trimmedText = text?.trim() ?? "";
+  const attachmentSummary = buildAttachmentSummary(attachments);
+  if (!trimmedText) {
+    return attachmentSummary;
+  }
+  if (!attachmentSummary) {
+    return trimmedText;
+  }
+  return `${trimmedText}\n\n${attachmentSummary}`.trim();
+}
+
+function resolveTranscript(attachments: BotmaxAttachment[]): string | undefined {
+  const transcripts = attachments
+    .map((attachment) =>
+      attachment.kind !== "location" ? normalizeNonEmptyString(attachment.transcript) : undefined,
+    )
+    .filter((value): value is string => Boolean(value));
+  if (transcripts.length === 0) {
+    return undefined;
+  }
+  return transcripts.join("\n\n");
+}
+
+function parseMentions(value: unknown): BotmaxMentionsContext | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const mentionedIds = Array.isArray(value.mentionedIds)
+    ? value.mentionedIds
+        .map((entry) => normalizeNonEmptyString(entry))
+        .filter((entry): entry is string => Boolean(entry))
+    : [];
+  return {
+    botMentioned: normalizeBoolean(value.botMentioned) ?? false,
+    mentionedIds,
+  };
+}
+
+function parseReplyTo(value: unknown): BotmaxReplyToContext | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const id = normalizeNonEmptyString(value.id);
+  if (!id) {
+    return undefined;
+  }
+  return {
+    id,
+    nativeId: normalizeNonEmptyString(value.nativeId),
+    senderId: normalizeNonEmptyString(value.senderId),
+    senderLabel: normalizeNonEmptyString(value.senderLabel),
+    text: normalizeNonEmptyString(value.text),
+    isQuote: normalizeBoolean(value.isQuote),
+  };
+}
+
+function parseAttachment(value: unknown): BotmaxAttachment | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const id = normalizeNonEmptyString(value.id);
+  const kind = normalizeNonEmptyString(value.kind);
+  if (!id || !kind) {
+    return null;
+  }
+  if (kind === "location") {
+    const latitude =
+      typeof value.latitude === "number" && Number.isFinite(value.latitude)
+        ? value.latitude
+        : undefined;
+    const longitude =
+      typeof value.longitude === "number" && Number.isFinite(value.longitude)
+        ? value.longitude
+        : undefined;
+    if (latitude == null || longitude == null) {
+      return null;
+    }
+    return {
+      id,
+      kind: "location",
+      label: normalizeNonEmptyString(value.label),
+      latitude,
+      longitude,
+      deliveryHints: isRecord(value.deliveryHints)
+        ? {
+            sendAs: normalizeNonEmptyString(value.deliveryHints.sendAs) as
+              | BotmaxAttachmentSendAs
+              | undefined,
+          }
+        : undefined,
+    };
+  }
+
+  if (!["image", "audio", "video", "file", "sticker"].includes(kind)) {
+    return null;
+  }
+  if (
+    !normalizeNonEmptyString(value.fetchUrl) &&
+    !normalizeNonEmptyString(value.sharedPath) &&
+    !normalizeNonEmptyString(value.inlineBase64)
+  ) {
+    return null;
+  }
+  return {
+    id,
+    kind: kind as Exclude<BotmaxAttachmentKind, "location">,
+    name: normalizeNonEmptyString(value.name),
+    mimeType: normalizeNonEmptyString(value.mimeType),
+    sizeBytes:
+      typeof value.sizeBytes === "number" &&
+      Number.isFinite(value.sizeBytes) &&
+      value.sizeBytes >= 0
+        ? Math.floor(value.sizeBytes)
+        : undefined,
+    fetchUrl: normalizeNonEmptyString(value.fetchUrl),
+    sharedPath: normalizeNonEmptyString(value.sharedPath),
+    inlineBase64: normalizeNonEmptyString(value.inlineBase64),
+    caption: typeof value.caption === "string" ? value.caption.trim() : undefined,
+    transcript: typeof value.transcript === "string" ? value.transcript.trim() : undefined,
+    width:
+      typeof value.width === "number" && Number.isFinite(value.width) && value.width > 0
+        ? Math.floor(value.width)
+        : undefined,
+    height:
+      typeof value.height === "number" && Number.isFinite(value.height) && value.height > 0
+        ? Math.floor(value.height)
+        : undefined,
+    durationMs:
+      typeof value.durationMs === "number" &&
+      Number.isFinite(value.durationMs) &&
+      value.durationMs >= 0
+        ? Math.floor(value.durationMs)
+        : undefined,
+    deliveryHints: isRecord(value.deliveryHints)
+      ? {
+          sendAs: normalizeNonEmptyString(value.deliveryHints.sendAs) as
+            | BotmaxAttachmentSendAs
+            | undefined,
+        }
+      : undefined,
+  };
+}
+
+function parseAttachments(value: unknown): BotmaxAttachment[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((entry) => parseAttachment(entry))
+    .filter((entry): entry is BotmaxAttachment => Boolean(entry));
+}
+
+function parseMessageContext(value: unknown): BotmaxMessageContext | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const id = normalizeNonEmptyString(value.id);
+  const createdAtMs = normalizeTimestamp(value.createdAtMs);
+  const mentions = parseMentions(value.mentions);
+  if (!id || createdAtMs == null || !mentions) {
+    return null;
+  }
+  const text = typeof value.text === "string" ? value.text.trim() : undefined;
+  const attachments = parseAttachments(value.attachments);
+  if (!text && attachments.length === 0) {
+    return null;
+  }
+  return {
+    id,
+    nativeId: normalizeNonEmptyString(value.nativeId),
+    fullId: normalizeNonEmptyString(value.fullId),
+    text,
+    createdAtMs,
+    editedAtMs: normalizeTimestamp(value.editedAtMs),
+    replyTo: parseReplyTo(value.replyTo),
+    mentions,
+    attachments: attachments.length > 0 ? attachments : undefined,
+  };
+}
+
+function parseTransportContext(value: unknown): BotmaxTransportContext | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  if (value.bridge !== "botmax") {
+    return null;
+  }
+  const receivedAtMs = normalizeTimestamp(value.receivedAtMs);
+  if (receivedAtMs == null) {
+    return null;
+  }
+  return {
+    bridge: "botmax",
+    receivedAtMs,
+    connectionId: normalizeNonEmptyString(value.connectionId),
+    dedupeKey: normalizeNonEmptyString(value.dedupeKey),
+    traceId: normalizeNonEmptyString(value.traceId),
+  };
+}
+
+function parseOriginContext(value: unknown): BotmaxOriginContext | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const platform = normalizeNonEmptyString(value.platform);
+  if (!platform) {
+    return null;
+  }
+  return {
+    platform,
+    surface: normalizeNonEmptyString(value.surface),
+    accountId: normalizeNonEmptyString(value.accountId),
+    botId: normalizeNonEmptyString(value.botId),
+    botUsername: normalizeNonEmptyString(value.botUsername),
+  };
+}
+
+function parseConversationContext(value: unknown): BotmaxConversationContext | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const id = normalizeNonEmptyString(value.id);
+  const replyTargetId = normalizeNonEmptyString(value.replyTargetId);
+  if (!id || !replyTargetId) {
+    return null;
+  }
+  return {
+    id,
+    nativeId: normalizeNonEmptyString(value.nativeId),
+    kind: normalizeChatType(value.kind),
+    replyTargetId,
+    title: normalizeNonEmptyString(value.title),
+    channelName: normalizeNonEmptyString(value.channelName),
+    spaceName: normalizeNonEmptyString(value.spaceName),
+    threadId: normalizeThreadId(value.threadId),
+    threadLabel: normalizeNonEmptyString(value.threadLabel),
+    parentId: normalizeNonEmptyString(value.parentId),
+    isForum: normalizeBoolean(value.isForum),
+  };
+}
+
+function parseResultConversationContext(value: unknown): BotmaxResultConversationContext | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const id = normalizeNonEmptyString(value.id);
+  const replyTargetId = normalizeNonEmptyString(value.replyTargetId);
+  if (!id || !replyTargetId) {
+    return null;
+  }
+  return {
+    id,
+    replyTargetId,
+    threadId: normalizeThreadId(value.threadId),
+  };
+}
+
+function parseSenderContext(value: unknown): BotmaxSenderContext | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const id = normalizeNonEmptyString(value.id);
+  if (!id) {
+    return null;
+  }
+  return {
+    id,
+    nativeId: normalizeNonEmptyString(value.nativeId),
+    displayName: normalizeNonEmptyString(value.displayName),
+    username: normalizeNonEmptyString(value.username),
+    tag: normalizeNonEmptyString(value.tag),
+    e164: normalizeNonEmptyString(value.e164),
+    isBot: normalizeBoolean(value.isBot),
+  };
+}
+
+function parseAuthContext(value: unknown): BotmaxAuthContext | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const deliveryAuthenticated = normalizeBoolean(value.deliveryAuthenticated);
+  const commandAuthorized = normalizeBoolean(value.commandAuthorized);
+  if (deliveryAuthenticated == null || commandAuthorized == null) {
+    return null;
+  }
+  return {
+    deliveryAuthenticated,
+    commandAuthorized,
+    senderIsOwner: normalizeBoolean(value.senderIsOwner),
+    scopes: Array.isArray(value.scopes)
+      ? value.scopes
+          .map((entry) => normalizeNonEmptyString(entry))
+          .filter((entry): entry is string => Boolean(entry))
+      : undefined,
+  };
+}
+
+function buildInboundBase(params: {
+  origin: BotmaxOriginContext;
+  conversation: BotmaxConversationContext;
+  sender: BotmaxSenderContext;
+  auth: BotmaxAuthContext;
+  message?: BotmaxMessageContext;
+  requestId?: JsonRpcId;
+}): BotmaxInboundBase {
+  const senderName =
+    params.sender.displayName?.trim() || params.sender.username?.trim() || params.sender.id.trim();
+  const chatType = params.conversation.kind;
+  return {
+    senderId: params.sender.id,
+    senderName,
+    senderUsername: params.sender.username,
+    provider: params.origin.platform,
+    surface: params.origin.surface?.trim() || params.origin.platform,
+    botUsername: params.origin.botUsername,
+    conversationId: params.conversation.id,
+    chatType,
+    chatId: chatType === CHAT_TYPE_DIRECT ? undefined : params.conversation.id,
+    conversationTitle: params.conversation.title,
+    replyTargetId: params.conversation.replyTargetId,
+    requestId: params.requestId,
+    messageId: params.message?.id,
+    messageFullId: params.message?.fullId,
+    timestampMs: params.message?.createdAtMs ?? Date.now(),
+    threadId: params.conversation.threadId,
+    replyToId: params.message?.replyTo?.id,
+    replyToBody: params.message?.replyTo?.text,
+    replyToSender: params.message?.replyTo?.senderLabel ?? params.message?.replyTo?.senderId,
+    wasMentioned: params.message?.mentions.botMentioned ?? false,
+    commandAuthorized: params.auth.commandAuthorized,
+    transcript: resolveTranscript(params.message?.attachments ?? []),
+    attachments: params.message?.attachments,
+  };
 }
 
 function parseJsonRpcMessage(trimmed: string): BotmaxInboundMessage | null {
@@ -125,58 +775,79 @@ function parseJsonRpcMessage(trimmed: string): BotmaxInboundMessage | null {
   if (params.v !== BOTMAX_TRANSPORT_VERSION) {
     return null;
   }
-  const senderIdRaw =
-    typeof params.senderId === "string" && params.senderId.trim()
-      ? params.senderId.trim()
-      : typeof params.from === "string"
-        ? params.from.trim()
-        : "";
-  const senderId = senderIdRaw;
-  if (!senderId) {
+  const requestId = normalizeJsonRpcId(frame.id);
+  const transport = parseTransportContext(params.transport);
+  void transport;
+  const origin = parseOriginContext(params.origin);
+  const type = normalizeNonEmptyString(params.type);
+  if (!transport || !origin || !type) {
     return null;
   }
-  const chatType = normalizeChatType(params.chatType);
-  const chatId =
-    typeof params.chatId === "string" && params.chatId.trim() ? params.chatId.trim() : undefined;
-  const replyTargetId = chatType === CHAT_TYPE_GROUP && chatId ? chatId : senderId;
-  const requestId = normalizeJsonRpcId(frame.id);
-  const type = typeof params.type === "string" ? params.type.trim() : "";
 
   if (type === CHAT_MESSAGE_TYPE) {
-    const body = typeof params.text === "string" ? params.text.trim() : "";
+    const conversation = parseConversationContext(params.conversation);
+    const sender = parseSenderContext(params.sender);
+    const message = parseMessageContext(params.message);
+    const auth = parseAuthContext(params.auth);
+    if (!conversation || !sender || !message || !auth) {
+      return null;
+    }
+    const body = buildMessageBody(message.text, message.attachments ?? []);
     if (!body) {
       return null;
     }
     return {
       kind: "chat",
-      senderId,
+      ...buildInboundBase({
+        origin,
+        conversation,
+        sender,
+        auth,
+        message,
+        requestId,
+      }),
       body,
-      chatType,
-      chatId,
-      replyTargetId,
-      requestId,
     };
   }
 
   if (type === COMMAND_EXEC_TYPE) {
-    const command = typeof params.command === "string" ? params.command.trim() : "";
+    const conversation = parseConversationContext(params.conversation);
+    const sender = parseSenderContext(params.sender);
+    const auth = parseAuthContext(params.auth);
+    if (!conversation || !sender || !auth || !isRecord(params.command)) {
+      return null;
+    }
+    const command = normalizeNonEmptyString(params.command.text);
     if (!command) {
       return null;
     }
     const timeoutMs =
-      typeof params.timeoutMs === "number" && Number.isFinite(params.timeoutMs) && params.timeoutMs > 0
-        ? Math.floor(params.timeoutMs)
+      typeof params.command.timeoutMs === "number" &&
+      Number.isFinite(params.command.timeoutMs) &&
+      params.command.timeoutMs > 0
+        ? Math.floor(params.command.timeoutMs)
         : undefined;
+    const message = params.message ? (parseMessageContext(params.message) ?? undefined) : undefined;
     return {
       kind: "command",
-      senderId,
+      ...buildInboundBase({
+        origin,
+        conversation,
+        sender,
+        auth,
+        message,
+        requestId,
+      }),
       command,
       timeoutMs,
-      chatType,
-      chatId,
-      replyTargetId,
-      requestId,
     };
+  }
+
+  if (type === COMMAND_RESULT_TYPE) {
+    const conversation = parseResultConversationContext(params.conversation);
+    if (!conversation) {
+      return null;
+    }
   }
 
   return null;
@@ -205,27 +876,88 @@ export function parseBotmaxInboundText(text: string): BotmaxInboundMessage | nul
   return parseJsonRpcMessage(trimmed);
 }
 
-export function formatBotmaxOutboundText(params: {
+export function formatBotmaxOutboundMessage(params: {
   recipientId: string;
-  text: string;
+  text?: string;
+  attachments?: BotmaxOutboundAttachmentInput[];
   senderId?: string;
   requestId?: JsonRpcId;
+  chatType?: BotmaxChatType;
+  conversationId?: string;
+  platform?: string;
+  surface?: string;
+  botUsername?: string;
+  messageId?: string;
+  threadId?: string | number;
 }): string {
   const normalizedRecipient = params.recipientId?.trim();
   if (!normalizedRecipient) {
     throw new Error("Botmax recipientId is required");
   }
+  const text = normalizeNonEmptyString(params.text);
+  const attachments = params.attachments?.filter(Boolean) ?? [];
+  if (!text && attachments.length === 0) {
+    throw new Error("Botmax chat message requires text or attachments");
+  }
   const from = params.senderId?.trim() || "openclaw:botmax";
+  const now = Date.now();
+  const platform = params.platform?.trim() || inferPlatformFromScopedId(normalizedRecipient);
+  const conversation = buildConversationContext({
+    recipientId: normalizedRecipient,
+    chatType: params.chatType,
+    conversationId: params.conversationId,
+    threadId: params.threadId,
+  });
   return stringifyTransportFrame(
     {
       v: BOTMAX_TRANSPORT_VERSION,
       type: CHAT_MESSAGE_TYPE,
-      from,
-      to: normalizedRecipient,
-      text: params.text ?? "",
+      transport: buildTransportContext(now),
+      origin: buildOriginContext({
+        platform,
+        surface: params.surface,
+        botUsername: params.botUsername,
+      }),
+      conversation,
+      sender: {
+        id: from,
+        nativeId: normalizeNativeId(from),
+        displayName: from,
+      },
+      message: buildMessageContext({
+        text,
+        attachments,
+        createdAtMs: now,
+        conversationId: conversation.id,
+        messageId: params.messageId,
+      }),
+      auth: {
+        deliveryAuthenticated: true,
+        commandAuthorized: false,
+      },
     },
     params.requestId,
   );
+}
+
+export function formatBotmaxOutboundText(params: {
+  recipientId: string;
+  text: string;
+  senderId?: string;
+  requestId?: JsonRpcId;
+  chatType?: BotmaxChatType;
+  conversationId?: string;
+  platform?: string;
+  surface?: string;
+  botUsername?: string;
+  messageId?: string;
+  threadId?: string | number;
+}): string {
+  const text = params.text ?? "";
+  if (!text.trim()) {
+    throw new Error("Botmax text message requires non-empty text");
+  }
+  return formatBotmaxOutboundMessage(params);
 }
 
 export function formatBotmaxOutboundCommandResult(params: {
@@ -237,6 +969,11 @@ export function formatBotmaxOutboundCommandResult(params: {
   data?: unknown;
   senderId?: string;
   requestId?: JsonRpcId;
+  chatType?: BotmaxChatType;
+  conversationId?: string;
+  platform?: string;
+  surface?: string;
+  threadId?: string | number;
 }): string {
   const normalizedRecipient = params.recipientId?.trim();
   if (!normalizedRecipient) {
@@ -246,18 +983,36 @@ export function formatBotmaxOutboundCommandResult(params: {
   if (!command) {
     throw new Error("Botmax command result requires command");
   }
-  const from = params.senderId?.trim() || "openclaw:botmax";
+  const platform = params.platform?.trim() || inferPlatformFromScopedId(normalizedRecipient);
+  const conversation = buildConversationContext({
+    recipientId: normalizedRecipient,
+    chatType: params.chatType,
+    conversationId: params.conversationId,
+    threadId: params.threadId,
+  });
   return stringifyTransportFrame(
     {
       v: BOTMAX_TRANSPORT_VERSION,
       type: COMMAND_RESULT_TYPE,
-      from,
-      to: normalizedRecipient,
-      command,
-      method: params.method,
-      ok: params.ok,
-      output: params.output ?? "",
-      data: params.data,
+      transport: buildTransportContext(Date.now()),
+      origin: buildOriginContext({
+        platform,
+        surface: params.surface,
+      }),
+      conversation: {
+        id: conversation.id,
+        replyTargetId: conversation.replyTargetId,
+        threadId: conversation.threadId,
+      },
+      command: {
+        text: command,
+        method: params.method,
+      },
+      result: {
+        ok: params.ok,
+        output: params.output ?? "",
+        data: params.data,
+      },
     },
     params.requestId,
   );

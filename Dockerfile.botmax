@@ -5,3 +5,4 @@ FROM ghcr.io/openclaw/openclaw:2026.3.12
 # when /home/node/.openclaw is mounted as a runtime volume.
 COPY --chown=node:node extensions/botmax/ /app/extensions/botmax/
 RUN rm -f /app/extensions/botmax/botmax.md
+RUN rm -f /app/extensions/protocol-v3-proposal.md

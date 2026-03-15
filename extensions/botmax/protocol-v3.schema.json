@@ -1,0 +1,650 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://botmax.local/schemas/protocol-v3.schema.json",
+  "title": "Botmax Transport Protocol v3",
+  "description": "Draft schema for the proposed Botmax JSON-RPC transport v3 envelope.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["jsonrpc", "method", "params"],
+  "properties": {
+    "jsonrpc": {
+      "const": "2.0"
+    },
+    "method": {
+      "const": "botmax.transport"
+    },
+    "id": {
+      "$ref": "#/$defs/jsonRpcId"
+    },
+    "params": {
+      "$ref": "#/$defs/transportParams"
+    }
+  },
+  "$defs": {
+    "jsonRpcId": {
+      "type": ["string", "integer", "null"]
+    },
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "timestampMs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "uriString": {
+      "type": "string",
+      "format": "uri"
+    },
+    "conversationKind": {
+      "type": "string",
+      "enum": ["direct", "group", "channel"]
+    },
+    "transportContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bridge", "receivedAtMs"],
+      "properties": {
+        "bridge": {
+          "const": "botmax"
+        },
+        "connectionId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "receivedAtMs": {
+          "$ref": "#/$defs/timestampMs"
+        },
+        "dedupeKey": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "traceId": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      }
+    },
+    "originContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["platform"],
+      "properties": {
+        "platform": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "surface": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "accountId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "botId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "botUsername": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      }
+    },
+    "conversationContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "replyTargetId"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "nativeId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "kind": {
+          "$ref": "#/$defs/conversationKind"
+        },
+        "replyTargetId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "title": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "channelName": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "spaceName": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "threadId": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            {
+              "type": "integer"
+            }
+          ]
+        },
+        "threadLabel": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "parentId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "isForum": {
+          "type": "boolean"
+        }
+      }
+    },
+    "resultConversationContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "replyTargetId"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "replyTargetId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "threadId": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            {
+              "type": "integer"
+            }
+          ]
+        }
+      }
+    },
+    "senderContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "nativeId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "displayName": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "username": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "tag": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "e164": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "isBot": {
+          "type": "boolean"
+        }
+      }
+    },
+    "authContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["deliveryAuthenticated", "commandAuthorized"],
+      "properties": {
+        "deliveryAuthenticated": {
+          "type": "boolean"
+        },
+        "commandAuthorized": {
+          "type": "boolean"
+        },
+        "senderIsOwner": {
+          "type": "boolean"
+        },
+        "scopes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        }
+      }
+    },
+    "replyToContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "nativeId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "senderId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "senderLabel": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "text": {
+          "type": "string"
+        },
+        "isQuote": {
+          "type": "boolean"
+        }
+      }
+    },
+    "forwardedFromContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "label": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "username": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "type": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "title": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "chatType": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "messageId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "dateMs": {
+          "$ref": "#/$defs/timestampMs"
+        }
+      },
+      "anyOf": [
+        {
+          "required": ["id"]
+        },
+        {
+          "required": ["label"]
+        },
+        {
+          "required": ["title"]
+        }
+      ]
+    },
+    "mentionsContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["botMentioned", "mentionedIds"],
+      "properties": {
+        "botMentioned": {
+          "type": "boolean"
+        },
+        "mentionedIds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "deliveryHints": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "sendAs": {
+          "type": "string",
+          "enum": [
+            "photo",
+            "image",
+            "voice",
+            "audio",
+            "video",
+            "video_note",
+            "document",
+            "sticker",
+            "location"
+          ]
+        }
+      }
+    },
+    "binaryAttachment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["image", "audio", "video", "file", "sticker"]
+        },
+        "name": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "mimeType": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fetchUrl": {
+          "$ref": "#/$defs/uriString"
+        },
+        "sharedPath": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "inlineBase64": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[A-Fa-f0-9]{64}$"
+        },
+        "caption": {
+          "type": "string"
+        },
+        "transcript": {
+          "type": "string"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "deliveryHints": {
+          "$ref": "#/$defs/deliveryHints"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "anyOf": [
+        {
+          "required": ["fetchUrl"]
+        },
+        {
+          "required": ["sharedPath"]
+        },
+        {
+          "required": ["inlineBase64"]
+        }
+      ]
+    },
+    "locationAttachment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "latitude", "longitude"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "kind": {
+          "const": "location"
+        },
+        "label": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "latitude": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90
+        },
+        "longitude": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180
+        },
+        "accuracyMeters": {
+          "type": "number",
+          "minimum": 0
+        },
+        "address": {
+          "type": "string"
+        },
+        "placeId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "mapUrl": {
+          "$ref": "#/$defs/uriString"
+        },
+        "deliveryHints": {
+          "$ref": "#/$defs/deliveryHints"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "attachments": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/binaryAttachment"
+          },
+          {
+            "$ref": "#/$defs/locationAttachment"
+          }
+        ]
+      }
+    },
+    "messageContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "createdAtMs", "mentions"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "nativeId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "fullId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "createdAtMs": {
+          "$ref": "#/$defs/timestampMs"
+        },
+        "editedAtMs": {
+          "$ref": "#/$defs/timestampMs"
+        },
+        "replyTo": {
+          "$ref": "#/$defs/replyToContext"
+        },
+        "forwardedFrom": {
+          "$ref": "#/$defs/forwardedFromContext"
+        },
+        "mentions": {
+          "$ref": "#/$defs/mentionsContext"
+        },
+        "attachments": {
+          "$ref": "#/$defs/attachments"
+        }
+      },
+      "anyOf": [
+        {
+          "required": ["text"]
+        },
+        {
+          "required": ["attachments"]
+        }
+      ]
+    },
+    "commandExecContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text"],
+      "properties": {
+        "text": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "commandResultContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text"],
+      "properties": {
+        "text": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "method": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      }
+    },
+    "resultContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "output"],
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "output": {
+          "type": "string"
+        },
+        "data": {}
+      }
+    },
+    "extensionsContext": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "chatMessageParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "type", "transport", "origin", "conversation", "sender", "message", "auth"],
+      "properties": {
+        "v": {
+          "const": 3
+        },
+        "type": {
+          "const": "chat.message"
+        },
+        "transport": {
+          "$ref": "#/$defs/transportContext"
+        },
+        "origin": {
+          "$ref": "#/$defs/originContext"
+        },
+        "conversation": {
+          "$ref": "#/$defs/conversationContext"
+        },
+        "sender": {
+          "$ref": "#/$defs/senderContext"
+        },
+        "message": {
+          "$ref": "#/$defs/messageContext"
+        },
+        "auth": {
+          "$ref": "#/$defs/authContext"
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensionsContext"
+        }
+      }
+    },
+    "commandExecParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "type", "transport", "origin", "conversation", "sender", "command", "auth"],
+      "properties": {
+        "v": {
+          "const": 3
+        },
+        "type": {
+          "const": "command.exec"
+        },
+        "transport": {
+          "$ref": "#/$defs/transportContext"
+        },
+        "origin": {
+          "$ref": "#/$defs/originContext"
+        },
+        "conversation": {
+          "$ref": "#/$defs/conversationContext"
+        },
+        "sender": {
+          "$ref": "#/$defs/senderContext"
+        },
+        "message": {
+          "$ref": "#/$defs/messageContext"
+        },
+        "command": {
+          "$ref": "#/$defs/commandExecContext"
+        },
+        "auth": {
+          "$ref": "#/$defs/authContext"
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensionsContext"
+        }
+      }
+    },
+    "commandResultParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "type", "transport", "origin", "conversation", "command", "result"],
+      "properties": {
+        "v": {
+          "const": 3
+        },
+        "type": {
+          "const": "command.result"
+        },
+        "transport": {
+          "$ref": "#/$defs/transportContext"
+        },
+        "origin": {
+          "$ref": "#/$defs/originContext"
+        },
+        "conversation": {
+          "$ref": "#/$defs/resultConversationContext"
+        },
+        "command": {
+          "$ref": "#/$defs/commandResultContext"
+        },
+        "result": {
+          "$ref": "#/$defs/resultContext"
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensionsContext"
+        }
+      }
+    },
+    "transportParams": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/chatMessageParams"
+        },
+        {
+          "$ref": "#/$defs/commandExecParams"
+        },
+        {
+          "$ref": "#/$defs/commandResultParams"
+        }
+      ]
+    }
+  }
+}

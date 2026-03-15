@@ -1,33 +1,69 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setBotmaxRuntime } from "./runtime.js";
 
-const sendBotmaxTextMock = vi.fn();
-const releaseHeartbeatMock = vi.fn();
-const suspendBotmaxHeartbeatMock = vi.fn(() => releaseHeartbeatMock);
+const {
+  sendBotmaxMessageMock,
+  sendBotmaxTextMock,
+  releaseHeartbeatMock,
+  suspendBotmaxHeartbeatMock,
+  materializeInboundAttachmentsMock,
+  buildOutboundAttachmentsFromReplyMock,
+} = vi.hoisted(() => {
+  const releaseHeartbeatMock = vi.fn();
+  return {
+    sendBotmaxMessageMock: vi.fn(),
+    sendBotmaxTextMock: vi.fn(),
+    releaseHeartbeatMock,
+    suspendBotmaxHeartbeatMock: vi.fn(() => releaseHeartbeatMock),
+    materializeInboundAttachmentsMock: vi.fn(),
+    buildOutboundAttachmentsFromReplyMock: vi.fn(),
+  };
+});
 
 vi.mock("openclaw/plugin-sdk", () => ({
   chunkTextForOutbound: vi.fn((text: string) => [text]),
-  createNormalizedOutboundDeliverer: vi.fn((deliver: unknown) => deliver),
   createReplyPrefixOptions: vi.fn(() => ({ onModelSelected: undefined })),
-  formatTextWithAttachmentLinks: vi.fn((text: string) => text),
-  resolveOutboundMediaUrls: vi.fn(() => []),
+}));
+
+vi.mock("./attachments.js", () => ({
+  materializeInboundAttachments: materializeInboundAttachmentsMock,
+  buildOutboundAttachmentsFromReply: buildOutboundAttachmentsFromReplyMock,
 }));
 
 vi.mock("./connection.js", () => ({
-  sendBotmaxText: (...args: unknown[]) => sendBotmaxTextMock(...args),
-  suspendBotmaxHeartbeat: (...args: unknown[]) => suspendBotmaxHeartbeatMock(...args),
+  sendBotmaxMessage: sendBotmaxMessageMock,
+  sendBotmaxText: sendBotmaxTextMock,
+  suspendBotmaxHeartbeat: suspendBotmaxHeartbeatMock,
 }));
 
 import { handleBotmaxInbound } from "./inbound.js";
 
 beforeEach(() => {
+  sendBotmaxMessageMock.mockReset();
   sendBotmaxTextMock.mockReset();
   releaseHeartbeatMock.mockReset();
   suspendBotmaxHeartbeatMock.mockClear();
+  materializeInboundAttachmentsMock.mockReset();
+  buildOutboundAttachmentsFromReplyMock.mockReset();
+  materializeInboundAttachmentsMock.mockResolvedValue({
+    mediaPayload: {},
+    transcript: undefined,
+  });
+  buildOutboundAttachmentsFromReplyMock.mockImplementation(async (params: { payload: unknown }) => {
+    const payload =
+      params.payload && typeof params.payload === "object"
+        ? (params.payload as { text?: string })
+        : {};
+    return {
+      text: payload.text,
+      attachments: [],
+    };
+  });
 });
 
 describe("botmax inbound replies", () => {
   it("sends only the actual reply content", async () => {
+    const finalizeInboundContext = vi.fn((ctx) => ctx);
     const dispatchReplyWithBufferedBlockDispatcher = vi.fn(async ({ dispatcherOptions }) => {
       await dispatcherOptions.deliver({ text: "reply text" });
     });
@@ -49,7 +85,7 @@ describe("botmax inbound replies", () => {
         reply: {
           resolveEnvelopeFormatOptions: vi.fn(() => ({})),
           formatAgentEnvelope: vi.fn(() => "envelope"),
-          finalizeInboundContext: vi.fn((ctx) => ctx),
+          finalizeInboundContext,
           dispatchReplyWithBufferedBlockDispatcher,
         },
         text: {
@@ -62,6 +98,7 @@ describe("botmax inbound replies", () => {
     const runtime = {
       error: vi.fn(),
       log: vi.fn(),
+      exit: vi.fn(),
     };
 
     await handleBotmaxInbound({
@@ -81,11 +118,160 @@ describe("botmax inbound replies", () => {
     });
 
     expect(dispatchReplyWithBufferedBlockDispatcher).toHaveBeenCalledTimes(1);
+    expect(sendBotmaxMessageMock).not.toHaveBeenCalled();
     expect(sendBotmaxTextMock).toHaveBeenCalledTimes(1);
     expect(sendBotmaxTextMock).toHaveBeenCalledWith("default", "telegram:123", "reply text", {
       requestId: "req-1",
+      chatType: "direct",
+      conversationId: "telegram:123",
+      platform: "botmax",
+      surface: "botmax",
+      botUsername: undefined,
+      threadId: undefined,
     });
+    expect(finalizeInboundContext).toHaveBeenCalledWith(
+      expect.objectContaining({
+        Transcript: undefined,
+      }),
+    );
     expect(runtime.log).not.toHaveBeenCalledWith(expect.stringContaining("<<<done>>>"));
+    expect(suspendBotmaxHeartbeatMock).toHaveBeenCalledWith("default");
+    expect(releaseHeartbeatMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("materializes inbound attachments and sends attachment replies through botmax frames", async () => {
+    const finalizeInboundContext = vi.fn((ctx) => ctx);
+    materializeInboundAttachmentsMock.mockResolvedValue({
+      mediaPayload: {
+        MediaPath: "/tmp/inbound.ogg",
+        MediaPaths: ["/tmp/inbound.ogg"],
+        MediaType: "audio",
+        MediaTypes: ["audio"],
+      },
+      transcript: "voice transcript",
+    });
+    buildOutboundAttachmentsFromReplyMock.mockResolvedValue({
+      text: "voice reply",
+      attachments: [
+        {
+          id: "att-1",
+          kind: "audio",
+          inlineBase64: "UklGRg==",
+          mimeType: "audio/ogg",
+          deliveryHints: {
+            sendAs: "voice",
+          },
+        },
+      ],
+    });
+    const dispatchReplyWithBufferedBlockDispatcher = vi.fn(async ({ dispatcherOptions }) => {
+      await dispatcherOptions.deliver({
+        text: "voice reply",
+        mediaUrl: "file:///tmp/reply.ogg",
+        audioAsVoice: true,
+      });
+    });
+
+    setBotmaxRuntime({
+      channel: {
+        routing: {
+          resolveAgentRoute: vi.fn(() => ({
+            agentId: "agent-1",
+            sessionKey: "session-1",
+            accountId: "default",
+          })),
+        },
+        session: {
+          resolveStorePath: vi.fn(() => "/tmp/store"),
+          readSessionUpdatedAt: vi.fn(() => undefined),
+          recordInboundSession: vi.fn(async () => {}),
+        },
+        reply: {
+          resolveEnvelopeFormatOptions: vi.fn(() => ({})),
+          formatAgentEnvelope: vi.fn(() => "envelope"),
+          finalizeInboundContext,
+          dispatchReplyWithBufferedBlockDispatcher,
+        },
+        text: {
+          resolveMarkdownTableMode: vi.fn(() => "plain"),
+          convertMarkdownTables: vi.fn((text) => text),
+        },
+      },
+    } as never);
+
+    await handleBotmaxInbound({
+      senderId: "telegram:123",
+      body: "[Audio]\nTranscript:\nvoice transcript",
+      chatType: "direct",
+      replyTargetId: "telegram:123",
+      requestId: "req-media",
+      attachments: [
+        {
+          id: "voice-1",
+          kind: "audio",
+          fetchUrl: "https://r2.example.test/voice-1",
+          mimeType: "audio/ogg",
+        },
+      ],
+      account: {
+        accountId: "default",
+        enabled: true,
+        server: "wss://botmax.example/ws",
+        textChunkLimit: 2000,
+      },
+      config: {},
+      runtime: {
+        error: vi.fn(),
+        log: vi.fn(),
+        exit: vi.fn(),
+      },
+    });
+
+    expect(materializeInboundAttachmentsMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attachments: [
+          expect.objectContaining({
+            id: "voice-1",
+            kind: "audio",
+          }),
+        ],
+      }),
+    );
+    expect(finalizeInboundContext).toHaveBeenCalledWith(
+      expect.objectContaining({
+        Transcript: "voice transcript",
+        MediaPath: "/tmp/inbound.ogg",
+        MediaPaths: ["/tmp/inbound.ogg"],
+        MediaType: "audio",
+        MediaTypes: ["audio"],
+      }),
+    );
+    expect(sendBotmaxTextMock).not.toHaveBeenCalled();
+    expect(sendBotmaxMessageMock).toHaveBeenCalledWith(
+      "default",
+      "telegram:123",
+      {
+        text: "voice reply",
+        attachments: [
+          expect.objectContaining({
+            id: "att-1",
+            kind: "audio",
+            deliveryHints: {
+              sendAs: "voice",
+            },
+          }),
+        ],
+      },
+      {
+        requestId: "req-media",
+        chatType: "direct",
+        conversationId: "telegram:123",
+        platform: "botmax",
+        surface: "botmax",
+        botUsername: undefined,
+        threadId: undefined,
+      },
+    );
     expect(suspendBotmaxHeartbeatMock).toHaveBeenCalledWith("default");
     expect(releaseHeartbeatMock).toHaveBeenCalledTimes(1);
   });

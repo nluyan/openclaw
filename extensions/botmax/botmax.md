@@ -5,10 +5,11 @@
 - The Botmax plugin connects OpenClaw to BotKeeper over WebSocket using `BOTMAX_SERVER`.
 - Query parameters such as `botid`, and `token` should be appended directly to `BOTMAX_SERVER` when needed.
 - BotKeeper routes inbound WebSocket text to the corresponding channel (for example, Telegram via `telegram:<userId>`).
+- Telegram is the first Botmax v3 media-enabled upstream and downstream surface.
 
 ## Unified Transport Protocol (JSON-RPC)
 
-- Botmax now uses one JSON-RPC envelope (`jsonrpc=2.0`, `method=botmax.transport`) for both chat text and command execution.
+- BotKeeper and the OpenClaw Botmax plugin now use one JSON-RPC envelope (`jsonrpc=2.0`, `method=botmax.transport`) with `params.v=3`.
 - Legacy `[[[id]]]text` protocol is fully removed.
 - Heartbeats remain text frames: `<<<ping>>>` and `<<<pong>>>`.
 
@@ -20,14 +21,56 @@
   "method": "botmax.transport",
   "id": "optional-request-id",
   "params": {
-    "v": 2,
+    "v": 3,
     "type": "chat.message",
-    "from": "telegram:123456",
-    "to": "openclaw:botmax",
-    "text": "hello",
-    "chatType": "group",
-    "chatId": "telegram:-1001234567890",
-    "senderId": "telegram:123456"
+    "transport": {
+      "bridge": "botmax",
+      "receivedAtMs": 1773561600000,
+      "dedupeKey": "telegram:-1001234567890:987654321"
+    },
+    "origin": {
+      "platform": "telegram",
+      "surface": "telegram",
+      "botUsername": "demo_bot"
+    },
+    "conversation": {
+      "id": "telegram:-1001234567890",
+      "nativeId": "-1001234567890",
+      "kind": "group",
+      "replyTargetId": "telegram:-1001234567890",
+      "title": "Release Squad",
+      "threadId": "77"
+    },
+    "sender": {
+      "id": "telegram:123456",
+      "nativeId": "123456",
+      "displayName": "Alice",
+      "username": "alice_demo",
+      "isBot": false
+    },
+    "message": {
+      "id": "tg:msg:987654321",
+      "nativeId": "987654321",
+      "fullId": "telegram:-1001234567890:987654321",
+      "text": "hello",
+      "createdAtMs": 1773561600000,
+      "replyTo": {
+        "id": "tg:msg:987654300",
+        "senderId": "telegram:456",
+        "senderLabel": "Bob",
+        "text": "quoted text",
+        "isQuote": false
+      },
+      "mentions": {
+        "botMentioned": false,
+        "mentionedIds": []
+      },
+      "attachments": []
+    },
+    "auth": {
+      "deliveryAuthenticated": true,
+      "commandAuthorized": true
+    }
   }
 }
 ```
@@ -40,15 +83,46 @@
   "method": "botmax.transport",
   "id": "cmd-001",
   "params": {
-    "v": 2,
+    "v": 3,
     "type": "command.exec",
-    "from": "telegram:123456",
-    "to": "openclaw:botmax",
-    "command": "openclaw devices list",
-    "timeoutMs": 10000,
-    "chatType": "group",
-    "chatId": "telegram:-1001234567890",
-    "senderId": "telegram:123456"
+    "transport": {
+      "bridge": "botmax",
+      "receivedAtMs": 1773561600000
+    },
+    "origin": {
+      "platform": "telegram",
+      "surface": "telegram"
+    },
+    "conversation": {
+      "id": "telegram:-1001234567890",
+      "nativeId": "-1001234567890",
+      "kind": "group",
+      "replyTargetId": "telegram:-1001234567890"
+    },
+    "sender": {
+      "id": "telegram:123456",
+      "nativeId": "123456",
+      "displayName": "Alice"
+    },
+    "message": {
+      "id": "tg:msg:987654321",
+      "nativeId": "987654321",
+      "fullId": "telegram:-1001234567890:987654321",
+      "text": "/oc openclaw devices list",
+      "createdAtMs": 1773561600000,
+      "mentions": {
+        "botMentioned": false,
+        "mentionedIds": []
+      }
+    },
+    "command": {
+      "text": "openclaw devices list",
+      "timeoutMs": 10000
+    },
+    "auth": {
+      "deliveryAuthenticated": true,
+      "commandAuthorized": true
+    }
   }
 }
 ```
@@ -61,15 +135,29 @@
   "method": "botmax.transport",
   "id": "cmd-001",
   "params": {
-    "v": 2,
+    "v": 3,
     "type": "command.result",
-    "from": "openclaw:botmax",
-    "to": "telegram:123456",
-    "command": "openclaw devices list",
-    "method": "device.pair.list",
-    "ok": true,
-    "output": "{ ...stringified result... }",
-    "data": {}
+    "transport": {
+      "bridge": "botmax",
+      "receivedAtMs": 1773561605000
+    },
+    "origin": {
+      "platform": "telegram",
+      "surface": "telegram"
+    },
+    "conversation": {
+      "id": "telegram:123456",
+      "replyTargetId": "telegram:123456"
+    },
+    "command": {
+      "text": "openclaw devices list",
+      "method": "device.pair.list"
+    },
+    "result": {
+      "ok": true,
+      "output": "{ ...stringified result... }",
+      "data": {}
+    }
   }
 }
 ```
@@ -98,12 +186,33 @@
 
 ## Protocol Rules
 
-- BotKeeper <-> OpenClaw only accepts JSON-RPC `botmax.transport` frames (`params.v=2`).
+- BotKeeper <-> OpenClaw only accepts JSON-RPC `botmax.transport` frames with `params.v=3`.
 - OpenClaw accepts `chat.message` and `command.exec`.
 - BotKeeper consumes `chat.message` and `command.result`.
-- For `chatType=group`, OpenClaw routes and replies by `chatId` (not by `from`).
-- For `chatType=direct`, OpenClaw routes and replies by `from`.
+- `conversation.id` is the conversation identity for routing and session scoping.
+- `conversation.replyTargetId` is the concrete delivery target for replies and command results.
+- `sender.id` is the actual sender identity and is separate from the conversation id.
+- `origin.platform` is forwarded into OpenClaw as the real upstream provider instead of collapsing everything to `botmax`.
+- `sender.displayName` and `sender.username` are forwarded so OpenClaw can populate `SenderName` and `SenderUsername`.
+- The Telegram -> BotKeeper bridge currently forwards sender labels, usernames, message ids, reply targets, group titles, and thread ids when Telegram provides them.
 - Botmax chat replies end with the actual outbound message only; the plugin does not append any `<<<done>>>` marker.
+
+## Rich Attachment Model
+
+- The fuller v3 contract, including attachment and file fields, is documented in [protocol-v3-proposal.md](./protocol-v3-proposal.md).
+- The machine-readable schema lives in [protocol-v3.schema.json](./protocol-v3.schema.json).
+- The current runtime implements the v3 text, command, and attachment envelope end-to-end between BotKeeper and the OpenClaw Botmax plugin.
+- Telegram inbound media currently covers `photo`, `voice`, `audio`, `video`, `document`, and `sticker`.
+- BotKeeper downloads Telegram media, uploads it to the private R2 bucket, and forwards signed `fetchUrl` attachment references to OpenClaw.
+- OpenClaw materializes inbound attachments into temp files and maps them into media-aware inbound context fields such as `MediaPath`, `MediaPaths`, `MediaType`, and `MediaTypes`.
+- OpenClaw outbound media replies are serialized back into Botmax v3 attachments:
+  - remote media URLs stay as `fetchUrl`
+  - local media files are inlined as `inlineBase64`
+- BotKeeper currently rehydrates those Botmax attachments and sends them downstream to Telegram with native media APIs.
+- Current guardrails:
+  - per-file relay limit: `20 MB`
+  - R2 download URL TTL: `30 minutes`
+  - R2 object retention target: `72 hours` via bucket lifecycle / retention policy
 
 ## Troubleshooting Reconnect Loops
 

@@ -1,22 +1,36 @@
 import type { OpenClawConfig, RuntimeEnv } from "openclaw/plugin-sdk";
-import {
-  chunkTextForOutbound,
-  createNormalizedOutboundDeliverer,
-  createReplyPrefixOptions,
-  formatTextWithAttachmentLinks,
-  resolveOutboundMediaUrls,
-} from "openclaw/plugin-sdk";
-import { sendBotmaxText, suspendBotmaxHeartbeat } from "./connection.js";
+import { chunkTextForOutbound, createReplyPrefixOptions } from "openclaw/plugin-sdk";
+import { buildOutboundAttachmentsFromReply, materializeInboundAttachments } from "./attachments.js";
+import { sendBotmaxMessage, sendBotmaxText, suspendBotmaxHeartbeat } from "./connection.js";
+import type { BotmaxInboundAttachment } from "./message-format.js";
 import { getBotmaxRuntime } from "./runtime.js";
 import type { ResolvedBotmaxAccount } from "./types.js";
 
 export async function handleBotmaxInbound(params: {
   senderId: string;
+  senderName?: string;
+  senderUsername?: string;
   body: string;
-  chatType: "direct" | "group";
+  chatType: "direct" | "group" | "channel";
   chatId?: string;
+  conversationId?: string;
+  conversationTitle?: string;
   replyTargetId: string;
   requestId?: string | number | null;
+  provider?: string;
+  surface?: string;
+  botUsername?: string;
+  messageId?: string;
+  messageFullId?: string;
+  timestampMs?: number;
+  replyToId?: string;
+  replyToBody?: string;
+  replyToSender?: string;
+  threadId?: string | number;
+  wasMentioned?: boolean;
+  commandAuthorized?: boolean;
+  transcript?: string;
+  attachments?: BotmaxInboundAttachment[];
   account: ResolvedBotmaxAccount;
   config: OpenClawConfig;
   runtime: RuntimeEnv;
@@ -24,11 +38,29 @@ export async function handleBotmaxInbound(params: {
 }): Promise<void> {
   const {
     senderId,
+    senderName,
+    senderUsername,
     body,
     chatType,
     chatId,
+    conversationId,
+    conversationTitle,
     replyTargetId,
     requestId,
+    provider,
+    surface,
+    botUsername,
+    messageId,
+    messageFullId,
+    timestampMs,
+    replyToId,
+    replyToBody,
+    replyToSender,
+    threadId,
+    wasMentioned,
+    commandAuthorized,
+    transcript,
+    attachments,
     account,
     config,
     runtime,
@@ -39,9 +71,19 @@ export async function handleBotmaxInbound(params: {
   if (!rawBody) {
     return;
   }
-  const isGroup = chatType === "group";
-  const normalizedChatId = chatId?.trim() || (isGroup ? replyTargetId : undefined);
-  const routePeerId = isGroup ? normalizedChatId || replyTargetId : senderId;
+  const isGroupConversation = chatType !== "direct";
+  const normalizedConversationId =
+    conversationId?.trim() || (isGroupConversation ? chatId?.trim() || replyTargetId : senderId);
+  const normalizedChatId =
+    chatId?.trim() || (isGroupConversation ? normalizedConversationId : undefined);
+  const routePeerId = isGroupConversation ? normalizedConversationId : senderId;
+  const normalizedProvider = provider?.trim() || "botmax";
+  const normalizedSurface = surface?.trim() || normalizedProvider;
+  const normalizedSenderName = senderName?.trim() || senderUsername?.trim() || senderId;
+  const normalizedConversationLabel = isGroupConversation
+    ? conversationTitle?.trim() || normalizedConversationId
+    : normalizedSenderName;
+  const inboundTimestamp = timestampMs ?? Date.now();
 
   statusSink?.({ lastInboundAt: Date.now() });
 
@@ -50,7 +92,7 @@ export async function handleBotmaxInbound(params: {
     channel: "botmax",
     accountId: account.accountId,
     peer: {
-      kind: isGroup ? "group" : "direct",
+      kind: isGroupConversation ? "group" : "direct",
       id: routePeerId,
     },
   });
@@ -66,33 +108,53 @@ export async function handleBotmaxInbound(params: {
 
   const envelopeBody = core.channel.reply.formatAgentEnvelope({
     channel: "Botmax",
-    from: isGroup ? senderId : routePeerId,
-    timestamp: Date.now(),
+    from: normalizedSenderName,
+    timestamp: inboundTimestamp,
     previousTimestamp,
     envelope: envelopeOptions,
     body: rawBody,
   });
+
+  const materializedAttachments = await materializeInboundAttachments({
+    attachments,
+    runtime: core,
+  });
+  const effectiveTranscript = transcript?.trim() || materializedAttachments.transcript;
 
   const ctxPayload = core.channel.reply.finalizeInboundContext({
     Body: envelopeBody,
     BodyForAgent: rawBody,
     RawBody: rawBody,
     CommandBody: rawBody,
-    From: senderId,
+    BodyForCommands: rawBody,
+    From: normalizedConversationId,
     To: replyTargetId,
     SessionKey: route.sessionKey,
     AccountId: route.accountId,
-    ChatType: isGroup ? "group" : "direct",
-    ConversationLabel: routePeerId,
-    SenderName: senderId,
+    ChatType: chatType,
+    ConversationLabel: normalizedConversationLabel,
+    SenderName: normalizedSenderName,
     SenderId: senderId,
-    GroupSubject: isGroup ? routePeerId : undefined,
-    Provider: "botmax",
-    Surface: "botmax",
-    Timestamp: Date.now(),
+    SenderUsername: senderUsername?.trim() || undefined,
+    GroupSubject: isGroupConversation ? normalizedConversationLabel : undefined,
+    GroupChannel: chatType === "channel" ? normalizedConversationLabel : undefined,
+    Provider: normalizedProvider,
+    Surface: normalizedSurface,
+    BotUsername: botUsername?.trim() || undefined,
+    MessageSid: messageId?.trim() || undefined,
+    MessageSidFull: messageFullId?.trim() || undefined,
+    ReplyToId: replyToId?.trim() || undefined,
+    ReplyToBody: replyToBody?.trim() || undefined,
+    ReplyToSender: replyToSender?.trim() || undefined,
+    Transcript: effectiveTranscript,
+    WasMentioned: wasMentioned,
+    MessageThreadId: threadId,
+    NativeChannelId: normalizedConversationId,
+    Timestamp: inboundTimestamp,
     OriginatingChannel: "botmax",
-    OriginatingTo: senderId,
-    CommandAuthorized: true,
+    OriginatingTo: replyTargetId,
+    CommandAuthorized: commandAuthorized ?? true,
+    ...materializedAttachments.mediaPayload,
   });
 
   await core.channel.session.recordInboundSession({
@@ -118,22 +180,57 @@ export async function handleBotmaxInbound(params: {
 
   let outboundDelivered = 0;
 
-  const deliver = createNormalizedOutboundDeliverer(async (payload) => {
-    const combined = formatTextWithAttachmentLinks(payload.text, resolveOutboundMediaUrls(payload));
-    if (!combined.trim()) {
+  const deliver = async (payload: unknown) => {
+    const outbound = await buildOutboundAttachmentsFromReply({
+      payload,
+      runtime: core,
+    });
+    const renderedText = outbound.text
+      ? core.channel.text.convertMarkdownTables(outbound.text, tableMode)
+      : undefined;
+    if (outbound.attachments.length > 0) {
+      await sendBotmaxMessage(
+        account.accountId,
+        replyTargetId,
+        {
+          text: renderedText,
+          attachments: outbound.attachments,
+        },
+        {
+          requestId,
+          chatType,
+          conversationId: normalizedConversationId,
+          platform: normalizedProvider,
+          surface: normalizedSurface,
+          botUsername,
+          threadId,
+        },
+      );
+      outboundDelivered += 1;
       return;
     }
-    const textToSend = core.channel.text.convertMarkdownTables(combined, tableMode);
+    const textToSend = renderedText ?? "";
+    if (!textToSend.trim()) {
+      return;
+    }
     const limit = account.textChunkLimit;
     const chunks = limit > 0 ? chunkTextForOutbound(textToSend, limit) : [textToSend];
     for (const chunk of chunks) {
       if (!chunk) {
         continue;
       }
-      await sendBotmaxText(account.accountId, replyTargetId, chunk, { requestId });
+      await sendBotmaxText(account.accountId, replyTargetId, chunk, {
+        requestId,
+        chatType,
+        conversationId: normalizedConversationId,
+        platform: normalizedProvider,
+        surface: normalizedSurface,
+        botUsername,
+        threadId,
+      });
       outboundDelivered += 1;
     }
-  });
+  };
 
   const releaseHeartbeat = suspendBotmaxHeartbeat(account.accountId);
   try {

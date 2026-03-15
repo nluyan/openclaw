@@ -15,8 +15,9 @@ import {
   normalizeBotmaxId,
   resolveAccount,
 } from "./accounts.js";
+import { buildOutboundAttachmentsFromReply } from "./attachments.js";
 import { BotmaxConfigSchema } from "./config-schema.js";
-import { sendBotmaxText, suspendBotmaxHeartbeat } from "./connection.js";
+import { sendBotmaxMessage, sendBotmaxText, suspendBotmaxHeartbeat } from "./connection.js";
 import { monitorBotmaxAccount } from "./monitor.js";
 import { getBotmaxRuntime } from "./runtime.js";
 import type { ResolvedBotmaxAccount } from "./types.js";
@@ -44,8 +45,8 @@ export const botmaxPlugin: ChannelPlugin<ResolvedBotmaxAccount> = {
     order: 95,
   },
   capabilities: {
-    chatTypes: ["direct", "group"],
-    media: false,
+    chatTypes: ["direct", "group", "channel"],
+    media: true,
     blockStreaming: true,
   },
   reload: { configPrefixes: ["channels.botmax"] },
@@ -75,7 +76,7 @@ export const botmaxPlugin: ChannelPlugin<ResolvedBotmaxAccount> = {
       name: account.name,
       enabled: account.enabled,
       configured: isAccountConfigured(account),
-      server: account.server,
+      baseUrl: account.server,
     }),
     resolveDefaultTo: ({ cfg, accountId }) => {
       void cfg;
@@ -102,7 +103,7 @@ export const botmaxPlugin: ChannelPlugin<ResolvedBotmaxAccount> = {
     chunker: (text, limit) => chunkTextForOutbound(text, limit),
     chunkerMode: "text",
     textChunkLimit: 2000,
-    sendText: async ({ to, text, accountId, cfg }) => {
+    sendText: async ({ to, text, accountId, cfg, threadId }) => {
       const account = resolveAccount(cfg, accountId);
       if (!isAccountConfigured(account)) {
         throw new Error("Botmax account is not configured");
@@ -117,13 +118,15 @@ export const botmaxPlugin: ChannelPlugin<ResolvedBotmaxAccount> = {
       const message = core.channel.text.convertMarkdownTables(text ?? "", tableMode);
       const releaseHeartbeat = suspendBotmaxHeartbeat(account.accountId);
       try {
-        await sendBotmaxText(account.accountId, target, message);
+        await sendBotmaxText(account.accountId, target, message, {
+          threadId: threadId ?? undefined,
+        });
       } finally {
         releaseHeartbeat();
       }
       return { channel: CHANNEL_ID, messageId: `botmax-${Date.now()}`, chatId: target };
     },
-    sendMedia: async ({ to, text, mediaUrl, accountId, cfg }) => {
+    sendMedia: async ({ to, text, mediaUrl, mediaLocalRoots, accountId, cfg, threadId }) => {
       const account = resolveAccount(cfg, accountId);
       if (!isAccountConfigured(account)) {
         throw new Error("Botmax account is not configured");
@@ -138,11 +141,19 @@ export const botmaxPlugin: ChannelPlugin<ResolvedBotmaxAccount> = {
         channel: CHANNEL_ID,
         accountId: account.accountId,
       });
-      const caption = core.channel.text.convertMarkdownTables(text ?? "", tableMode);
-      const payload = `${caption}\n\nAttachment: ${mediaUrl}`.trim();
+      const outbound = await buildOutboundAttachmentsFromReply({
+        payload: {
+          text: core.channel.text.convertMarkdownTables(text ?? "", tableMode),
+          mediaUrl,
+        },
+        runtime: core,
+        mediaLocalRoots,
+      });
       const releaseHeartbeat = suspendBotmaxHeartbeat(account.accountId);
       try {
-        await sendBotmaxText(account.accountId, target, payload);
+        await sendBotmaxMessage(account.accountId, target, outbound, {
+          threadId: threadId ?? undefined,
+        });
       } finally {
         releaseHeartbeat();
       }
@@ -166,7 +177,7 @@ export const botmaxPlugin: ChannelPlugin<ResolvedBotmaxAccount> = {
         lastError: runtime?.lastError ?? null,
         lastInboundAt: runtime?.lastInboundAt ?? null,
         lastOutboundAt: runtime?.lastOutboundAt ?? null,
-        server: account.server,
+        baseUrl: account.server,
       };
     },
   },

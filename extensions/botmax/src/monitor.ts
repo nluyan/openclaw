@@ -1,5 +1,6 @@
-import WebSocket from "ws";
 import type { OpenClawConfig, RuntimeEnv } from "openclaw/plugin-sdk";
+import WebSocket from "ws";
+import { executeBotmaxGatewayCommand } from "./command-exec.js";
 import {
   buildBotmaxUrl,
   clearActiveConnection,
@@ -11,7 +12,6 @@ import {
 } from "./connection.js";
 import { handleBotmaxInbound } from "./inbound.js";
 import { parseBotmaxInboundText } from "./message-format.js";
-import { executeBotmaxGatewayCommand } from "./command-exec.js";
 import type { ResolvedBotmaxAccount } from "./types.js";
 
 export type BotmaxMonitorOptions = {
@@ -81,7 +81,10 @@ async function openSocket(url: string, abortSignal: AbortSignal): Promise<WebSoc
   });
 }
 
-async function waitForDisconnect(ws: WebSocket, abortSignal: AbortSignal): Promise<{
+async function waitForDisconnect(
+  ws: WebSocket,
+  abortSignal: AbortSignal,
+): Promise<{
   code?: number;
   reason?: string;
   error?: Error;
@@ -185,11 +188,29 @@ export function monitorBotmaxAccount(options: BotmaxMonitorOptions): { stop: () 
             rememberBotmaxSender(account.accountId, inbound.senderId);
             void handleBotmaxInbound({
               senderId: inbound.senderId,
+              senderName: inbound.senderName,
+              senderUsername: inbound.senderUsername,
               body: inbound.body,
               chatType: inbound.chatType,
               chatId: inbound.chatId,
+              conversationId: inbound.conversationId,
+              conversationTitle: inbound.conversationTitle,
               replyTargetId: inbound.replyTargetId,
               requestId: inbound.requestId,
+              provider: inbound.provider,
+              surface: inbound.surface,
+              botUsername: inbound.botUsername,
+              messageId: inbound.messageId,
+              messageFullId: inbound.messageFullId,
+              timestampMs: inbound.timestampMs,
+              replyToId: inbound.replyToId,
+              replyToBody: inbound.replyToBody,
+              replyToSender: inbound.replyToSender,
+              threadId: inbound.threadId,
+              wasMentioned: inbound.wasMentioned,
+              commandAuthorized: inbound.commandAuthorized,
+              transcript: inbound.transcript,
+              attachments: inbound.attachments,
               account,
               config,
               runtime,
@@ -216,6 +237,11 @@ export function monitorBotmaxAccount(options: BotmaxMonitorOptions): { stop: () 
                   output: result.output,
                   data: result.data,
                   requestId: inbound.requestId,
+                  chatType: inbound.chatType,
+                  conversationId: inbound.conversationId,
+                  platform: inbound.provider,
+                  surface: inbound.surface,
+                  threadId: inbound.threadId,
                 });
               })
               .catch(async (err) => {
@@ -230,6 +256,11 @@ export function monitorBotmaxAccount(options: BotmaxMonitorOptions): { stop: () 
                     ok: false,
                     output: err instanceof Error ? err.message : String(err),
                     requestId: inbound.requestId,
+                    chatType: inbound.chatType,
+                    conversationId: inbound.conversationId,
+                    platform: inbound.provider,
+                    surface: inbound.surface,
+                    threadId: inbound.threadId,
                   });
                 } catch (sendErr) {
                   runtime.error?.(
