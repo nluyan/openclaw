@@ -65,6 +65,7 @@ describe("botmax message format", () => {
       surface: "telegram",
       botUsername: "demo_bot",
       conversationId: "telegram:123",
+      conversationNativeId: "123",
       chatType: "direct",
       chatId: undefined,
       conversationTitle: undefined,
@@ -80,6 +81,7 @@ describe("botmax message format", () => {
       wasMentioned: false,
       commandAuthorized: true,
       transcript: undefined,
+      attachments: undefined,
       body: "hi",
     });
   });
@@ -131,6 +133,7 @@ describe("botmax message format", () => {
       surface: "telegram",
       botUsername: undefined,
       conversationId: "telegram:123",
+      conversationNativeId: "123",
       chatType: "direct",
       chatId: undefined,
       conversationTitle: undefined,
@@ -146,6 +149,7 @@ describe("botmax message format", () => {
       wasMentioned: false,
       commandAuthorized: true,
       transcript: undefined,
+      attachments: undefined,
       command: "openclaw devices list",
       timeoutMs: 9000,
     });
@@ -210,6 +214,7 @@ describe("botmax message format", () => {
       surface: "telegram",
       botUsername: undefined,
       conversationId: "telegram:-100001",
+      conversationNativeId: "-100001",
       chatType: "group",
       chatId: "telegram:-100001",
       conversationTitle: "Release Squad",
@@ -225,6 +230,7 @@ describe("botmax message format", () => {
       wasMentioned: true,
       commandAuthorized: true,
       transcript: undefined,
+      attachments: undefined,
       body: "group hi",
     });
   });
@@ -291,6 +297,7 @@ describe("botmax message format", () => {
       surface: "telegram",
       botUsername: undefined,
       conversationId: "telegram:123",
+      conversationNativeId: "123",
       chatType: "direct",
       chatId: undefined,
       conversationTitle: undefined,

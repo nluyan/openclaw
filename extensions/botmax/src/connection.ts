@@ -25,6 +25,7 @@ type BotmaxSendEnvelopeOptions = {
   senderId?: string;
   chatType?: "direct" | "group" | "channel";
   conversationId?: string;
+  conversationNativeId?: string;
   platform?: string;
   surface?: string;
   botUsername?: string;
@@ -134,6 +135,7 @@ export async function sendBotmaxMessage(
     senderId: options?.senderId,
     chatType: options?.chatType,
     conversationId: options?.conversationId,
+    conversationNativeId: options?.conversationNativeId,
     platform: options?.platform,
     surface: options?.surface,
     botUsername: options?.botUsername,
@@ -179,6 +181,7 @@ export async function sendBotmaxCommandResult(params: {
   senderId?: string;
   chatType?: "direct" | "group" | "channel";
   conversationId?: string;
+  conversationNativeId?: string;
   platform?: string;
   surface?: string;
   threadId?: string | number;
@@ -202,6 +205,7 @@ export async function sendBotmaxCommandResult(params: {
     senderId: params.senderId,
     chatType: params.chatType,
     conversationId: params.conversationId,
+    conversationNativeId: params.conversationNativeId,
     platform: params.platform,
     surface: params.surface,
     threadId: params.threadId,

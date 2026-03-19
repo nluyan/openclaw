@@ -56,6 +56,7 @@ type BotmaxConversationContext = {
 
 type BotmaxResultConversationContext = {
   id: string;
+  nativeId?: string;
   replyTargetId: string;
   threadId?: string | number;
 };
@@ -203,6 +204,7 @@ type BotmaxInboundBase = {
   surface: string;
   botUsername?: string;
   conversationId: string;
+  conversationNativeId?: string;
   chatType: BotmaxChatType;
   chatId?: string;
   conversationTitle?: string;
@@ -343,13 +345,15 @@ function buildConversationContext(params: {
   recipientId: string;
   chatType?: BotmaxChatType;
   conversationId?: string;
+  conversationNativeId?: string;
   threadId?: string | number;
 }): BotmaxConversationContext {
   const conversationId = normalizeNonEmptyString(params.conversationId) ?? params.recipientId;
   const chatType = params.chatType ?? inferChatTypeFromRecipient(conversationId);
   return {
     id: conversationId,
-    nativeId: normalizeNativeId(conversationId),
+    nativeId:
+      normalizeNonEmptyString(params.conversationNativeId) ?? normalizeNativeId(conversationId),
     kind: chatType,
     replyTargetId: params.recipientId,
     threadId: params.threadId,
@@ -671,6 +675,7 @@ function parseResultConversationContext(value: unknown): BotmaxResultConversatio
   }
   return {
     id,
+    nativeId: normalizeNonEmptyString(value.nativeId),
     replyTargetId,
     threadId: normalizeThreadId(value.threadId),
   };
@@ -735,6 +740,7 @@ function buildInboundBase(params: {
     surface: params.origin.surface?.trim() || params.origin.platform,
     botUsername: params.origin.botUsername,
     conversationId: params.conversation.id,
+    conversationNativeId: params.conversation.nativeId,
     chatType,
     chatId: chatType === CHAT_TYPE_DIRECT ? undefined : params.conversation.id,
     conversationTitle: params.conversation.title,
@@ -884,6 +890,7 @@ export function formatBotmaxOutboundMessage(params: {
   requestId?: JsonRpcId;
   chatType?: BotmaxChatType;
   conversationId?: string;
+  conversationNativeId?: string;
   platform?: string;
   surface?: string;
   botUsername?: string;
@@ -906,6 +913,7 @@ export function formatBotmaxOutboundMessage(params: {
     recipientId: normalizedRecipient,
     chatType: params.chatType,
     conversationId: params.conversationId,
+    conversationNativeId: params.conversationNativeId,
     threadId: params.threadId,
   });
   return stringifyTransportFrame(
@@ -947,6 +955,7 @@ export function formatBotmaxOutboundText(params: {
   requestId?: JsonRpcId;
   chatType?: BotmaxChatType;
   conversationId?: string;
+  conversationNativeId?: string;
   platform?: string;
   surface?: string;
   botUsername?: string;
@@ -971,6 +980,7 @@ export function formatBotmaxOutboundCommandResult(params: {
   requestId?: JsonRpcId;
   chatType?: BotmaxChatType;
   conversationId?: string;
+  conversationNativeId?: string;
   platform?: string;
   surface?: string;
   threadId?: string | number;
@@ -988,6 +998,7 @@ export function formatBotmaxOutboundCommandResult(params: {
     recipientId: normalizedRecipient,
     chatType: params.chatType,
     conversationId: params.conversationId,
+    conversationNativeId: params.conversationNativeId,
     threadId: params.threadId,
   });
   return stringifyTransportFrame(
@@ -1001,6 +1012,7 @@ export function formatBotmaxOutboundCommandResult(params: {
       }),
       conversation: {
         id: conversation.id,
+        nativeId: conversation.nativeId,
         replyTargetId: conversation.replyTargetId,
         threadId: conversation.threadId,
       },

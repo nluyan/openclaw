@@ -14,6 +14,7 @@ export async function handleBotmaxInbound(params: {
   chatType: "direct" | "group" | "channel";
   chatId?: string;
   conversationId?: string;
+  conversationNativeId?: string;
   conversationTitle?: string;
   replyTargetId: string;
   requestId?: string | number | null;
@@ -44,6 +45,7 @@ export async function handleBotmaxInbound(params: {
     chatType,
     chatId,
     conversationId,
+    conversationNativeId,
     conversationTitle,
     replyTargetId,
     requestId,
@@ -74,6 +76,8 @@ export async function handleBotmaxInbound(params: {
   const isGroupConversation = chatType !== "direct";
   const normalizedConversationId =
     conversationId?.trim() || (isGroupConversation ? chatId?.trim() || replyTargetId : senderId);
+  const normalizedConversationNativeId =
+    conversationNativeId?.trim() || (isGroupConversation ? normalizedConversationId : undefined);
   const normalizedChatId =
     chatId?.trim() || (isGroupConversation ? normalizedConversationId : undefined);
   const routePeerId = isGroupConversation ? normalizedConversationId : senderId;
@@ -149,7 +153,7 @@ export async function handleBotmaxInbound(params: {
     Transcript: effectiveTranscript,
     WasMentioned: wasMentioned,
     MessageThreadId: threadId,
-    NativeChannelId: normalizedConversationId,
+    NativeChannelId: normalizedConversationNativeId ?? normalizedConversationId,
     Timestamp: inboundTimestamp,
     OriginatingChannel: "botmax",
     OriginatingTo: replyTargetId,
@@ -200,6 +204,7 @@ export async function handleBotmaxInbound(params: {
           requestId,
           chatType,
           conversationId: normalizedConversationId,
+          conversationNativeId: normalizedConversationNativeId,
           platform: normalizedProvider,
           surface: normalizedSurface,
           botUsername,
@@ -223,6 +228,7 @@ export async function handleBotmaxInbound(params: {
         requestId,
         chatType,
         conversationId: normalizedConversationId,
+        conversationNativeId: normalizedConversationNativeId,
         platform: normalizedProvider,
         surface: normalizedSurface,
         botUsername,
