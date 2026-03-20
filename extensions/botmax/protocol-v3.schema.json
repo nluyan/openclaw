@@ -40,6 +40,10 @@
       "type": "string",
       "enum": ["direct", "group", "channel"]
     },
+    "fileEncoding": {
+      "type": "string",
+      "enum": ["utf8", "base64"]
+    },
     "transportContext": {
       "type": "object",
       "additionalProperties": false,
@@ -513,6 +517,29 @@
         }
       }
     },
+    "fileContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation", "path", "encoding"],
+      "properties": {
+        "operation": {
+          "type": "string",
+          "enum": ["read", "write"]
+        },
+        "path": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "encoding": {
+          "$ref": "#/$defs/fileEncoding"
+        },
+        "content": {
+          "type": "string"
+        },
+        "ensureDirectory": {
+          "type": "boolean"
+        }
+      }
+    },
     "resultContext": {
       "type": "object",
       "additionalProperties": false,
@@ -523,6 +550,9 @@
         },
         "output": {
           "type": "string"
+        },
+        "errorCode": {
+          "$ref": "#/$defs/nonEmptyString"
         },
         "data": {}
       }
@@ -633,6 +663,107 @@
         }
       }
     },
+    "fileReadParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "type", "transport", "origin", "file"],
+      "properties": {
+        "v": {
+          "const": 3
+        },
+        "type": {
+          "const": "file.read"
+        },
+        "transport": {
+          "$ref": "#/$defs/transportContext"
+        },
+        "origin": {
+          "$ref": "#/$defs/originContext"
+        },
+        "file": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/fileContext"
+            },
+            {
+              "properties": {
+                "operation": {
+                  "const": "read"
+                }
+              }
+            }
+          ]
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensionsContext"
+        }
+      }
+    },
+    "fileWriteParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "type", "transport", "origin", "file"],
+      "properties": {
+        "v": {
+          "const": 3
+        },
+        "type": {
+          "const": "file.write"
+        },
+        "transport": {
+          "$ref": "#/$defs/transportContext"
+        },
+        "origin": {
+          "$ref": "#/$defs/originContext"
+        },
+        "file": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/fileContext"
+            },
+            {
+              "required": ["content"],
+              "properties": {
+                "operation": {
+                  "const": "write"
+                }
+              }
+            }
+          ]
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensionsContext"
+        }
+      }
+    },
+    "fileResultParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "type", "transport", "origin", "file", "result"],
+      "properties": {
+        "v": {
+          "const": 3
+        },
+        "type": {
+          "const": "file.result"
+        },
+        "transport": {
+          "$ref": "#/$defs/transportContext"
+        },
+        "origin": {
+          "$ref": "#/$defs/originContext"
+        },
+        "file": {
+          "$ref": "#/$defs/fileContext"
+        },
+        "result": {
+          "$ref": "#/$defs/resultContext"
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensionsContext"
+        }
+      }
+    },
     "transportParams": {
       "oneOf": [
         {
@@ -643,6 +774,15 @@
         },
         {
           "$ref": "#/$defs/commandResultParams"
+        },
+        {
+          "$ref": "#/$defs/fileReadParams"
+        },
+        {
+          "$ref": "#/$defs/fileWriteParams"
+        },
+        {
+          "$ref": "#/$defs/fileResultParams"
         }
       ]
     }

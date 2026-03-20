@@ -6,10 +6,12 @@ import {
   clearActiveConnection,
   createBotmaxSender,
   sendBotmaxCommandResult,
+  sendBotmaxFileResult,
   redactBotmaxUrl,
   rememberBotmaxSender,
   setActiveConnection,
 } from "./connection.js";
+import { BotmaxFileOperationError, readBotmaxFile, writeBotmaxFile } from "./file-ops.js";
 import { handleBotmaxInbound } from "./inbound.js";
 import { parseBotmaxInboundText } from "./message-format.js";
 import type { ResolvedBotmaxAccount } from "./types.js";
@@ -271,6 +273,74 @@ export function monitorBotmaxAccount(options: BotmaxMonitorOptions): { stop: () 
                   );
                 }
               });
+            return;
+          }
+
+          if (inbound.kind === "file.read") {
+            void readBotmaxFile({
+              path: inbound.path,
+              encoding: inbound.encoding,
+            })
+              .then(async (result) => {
+                await sendBotmaxFileResult({
+                  accountId: account.accountId,
+                  operation: "read",
+                  path: result.path,
+                  encoding: result.encoding,
+                  ok: true,
+                  output: `read ${result.sizeBytes} bytes from ${result.path}`,
+                  data: result,
+                  requestId: inbound.requestId,
+                  platform: "internal",
+                  surface: "internal",
+                });
+              })
+              .catch(async (err) => {
+                await sendBotmaxFileErrorResult({
+                  accountId: account.accountId,
+                  operation: "read",
+                  path: inbound.path,
+                  encoding: inbound.encoding,
+                  requestId: inbound.requestId,
+                  runtime,
+                  error: err,
+                });
+              });
+            return;
+          }
+
+          if (inbound.kind === "file.write") {
+            void writeBotmaxFile({
+              path: inbound.path,
+              content: inbound.content,
+              encoding: inbound.encoding,
+              ensureDirectory: inbound.ensureDirectory,
+            })
+              .then(async (result) => {
+                await sendBotmaxFileResult({
+                  accountId: account.accountId,
+                  operation: "write",
+                  path: result.path,
+                  encoding: result.encoding,
+                  ok: true,
+                  output: `wrote ${result.sizeBytes} bytes to ${result.path}`,
+                  data: result,
+                  requestId: inbound.requestId,
+                  platform: "internal",
+                  surface: "internal",
+                });
+              })
+              .catch(async (err) => {
+                await sendBotmaxFileErrorResult({
+                  accountId: account.accountId,
+                  operation: "write",
+                  path: inbound.path,
+                  encoding: inbound.encoding,
+                  requestId: inbound.requestId,
+                  runtime,
+                  error: err,
+                });
+              });
           }
         });
 
@@ -313,4 +383,41 @@ export function monitorBotmaxAccount(options: BotmaxMonitorOptions): { stop: () 
   void run();
 
   return { stop };
+}
+
+async function sendBotmaxFileErrorResult(params: {
+  accountId: string;
+  operation: "read" | "write";
+  path: string;
+  encoding: "utf8" | "base64";
+  requestId?: string | number | null;
+  runtime: RuntimeEnv;
+  error: unknown;
+}): Promise<void> {
+  const output = params.error instanceof Error ? params.error.message : String(params.error);
+  const errorCode =
+    params.error instanceof BotmaxFileOperationError ? params.error.code : "FILE_OPERATION_FAILED";
+
+  params.runtime.error?.(
+    `botmax[${params.accountId}]: file ${params.operation} error (${params.path}): ${output}`,
+  );
+
+  try {
+    await sendBotmaxFileResult({
+      accountId: params.accountId,
+      operation: params.operation,
+      path: params.path,
+      encoding: params.encoding,
+      ok: false,
+      output,
+      errorCode,
+      requestId: params.requestId,
+      platform: "internal",
+      surface: "internal",
+    });
+  } catch (sendErr) {
+    params.runtime.error?.(
+      `botmax[${params.accountId}]: file result send error: ${String(sendErr)}`,
+    );
+  }
 }

@@ -124,6 +124,7 @@ describe("botmax inbound replies", () => {
       requestId: "req-1",
       chatType: "direct",
       conversationId: "telegram:123",
+      replyToId: undefined,
       platform: "botmax",
       surface: "botmax",
       botUsername: undefined,
@@ -266,6 +267,7 @@ describe("botmax inbound replies", () => {
         requestId: "req-media",
         chatType: "direct",
         conversationId: "telegram:123",
+        replyToId: undefined,
         platform: "botmax",
         surface: "botmax",
         botUsername: undefined,
@@ -274,5 +276,84 @@ describe("botmax inbound replies", () => {
     );
     expect(suspendBotmaxHeartbeatMock).toHaveBeenCalledWith("default");
     expect(releaseHeartbeatMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("forwards replyToId from reply payloads into outbound botmax frames", async () => {
+    const dispatchReplyWithBufferedBlockDispatcher = vi.fn(async ({ dispatcherOptions }) => {
+      await dispatcherOptions.deliver({
+        text: "reply text",
+        replyToId: "msteams:msg:activity-123",
+      });
+    });
+
+    setBotmaxRuntime({
+      channel: {
+        routing: {
+          resolveAgentRoute: vi.fn(() => ({
+            agentId: "agent-1",
+            sessionKey: "session-1",
+            accountId: "default",
+          })),
+        },
+        session: {
+          resolveStorePath: vi.fn(() => "/tmp/store"),
+          readSessionUpdatedAt: vi.fn(() => undefined),
+          recordInboundSession: vi.fn(async () => {}),
+        },
+        reply: {
+          resolveEnvelopeFormatOptions: vi.fn(() => ({})),
+          formatAgentEnvelope: vi.fn(() => "envelope"),
+          finalizeInboundContext: vi.fn((ctx) => ctx),
+          dispatchReplyWithBufferedBlockDispatcher,
+        },
+        text: {
+          resolveMarkdownTableMode: vi.fn(() => "plain"),
+          convertMarkdownTables: vi.fn((text) => text),
+        },
+      },
+    } as never);
+
+    await handleBotmaxInbound({
+      senderId: "msteams:user-1",
+      body: "hello",
+      chatType: "channel",
+      chatId: "conversation-1",
+      conversationId: "msteams:channel:conversation-1|binding:binding-1",
+      conversationNativeId: "conversation-1",
+      replyTargetId:
+        "msteams:conversation:conversation-1|binding:00000000-0000-0000-0000-000000000001|replyTo:activity-999",
+      requestId: "req-teams",
+      provider: "msteams",
+      surface: "msteams",
+      account: {
+        accountId: "default",
+        enabled: true,
+        server: "wss://botmax.example/ws",
+        textChunkLimit: 2000,
+      },
+      config: {},
+      runtime: {
+        error: vi.fn(),
+        log: vi.fn(),
+        exit: vi.fn(),
+      },
+    });
+
+    expect(sendBotmaxTextMock).toHaveBeenCalledWith(
+      "default",
+      "msteams:conversation:conversation-1|binding:00000000-0000-0000-0000-000000000001|replyTo:activity-999",
+      "reply text",
+      {
+        requestId: "req-teams",
+        chatType: "channel",
+        conversationId: "msteams:channel:conversation-1|binding:binding-1",
+        conversationNativeId: "conversation-1",
+        replyToId: "msteams:msg:activity-123",
+        platform: "msteams",
+        surface: "msteams",
+        botUsername: undefined,
+        threadId: undefined,
+      },
+    );
   });
 });

@@ -103,7 +103,7 @@ export const botmaxPlugin: ChannelPlugin<ResolvedBotmaxAccount> = {
     chunker: (text, limit) => chunkTextForOutbound(text, limit),
     chunkerMode: "text",
     textChunkLimit: 2000,
-    sendText: async ({ to, text, accountId, cfg, threadId }) => {
+    sendText: async ({ to, text, accountId, cfg, threadId, replyToId }) => {
       const account = resolveAccount(cfg, accountId);
       if (!isAccountConfigured(account)) {
         throw new Error("Botmax account is not configured");
@@ -119,6 +119,7 @@ export const botmaxPlugin: ChannelPlugin<ResolvedBotmaxAccount> = {
       const releaseHeartbeat = suspendBotmaxHeartbeat(account.accountId);
       try {
         await sendBotmaxText(account.accountId, target, message, {
+          replyToId: replyToId ?? undefined,
           threadId: threadId ?? undefined,
         });
       } finally {
@@ -126,7 +127,16 @@ export const botmaxPlugin: ChannelPlugin<ResolvedBotmaxAccount> = {
       }
       return { channel: CHANNEL_ID, messageId: `botmax-${Date.now()}`, chatId: target };
     },
-    sendMedia: async ({ to, text, mediaUrl, mediaLocalRoots, accountId, cfg, threadId }) => {
+    sendMedia: async ({
+      to,
+      text,
+      mediaUrl,
+      mediaLocalRoots,
+      accountId,
+      cfg,
+      threadId,
+      replyToId,
+    }) => {
       const account = resolveAccount(cfg, accountId);
       if (!isAccountConfigured(account)) {
         throw new Error("Botmax account is not configured");
@@ -152,6 +162,7 @@ export const botmaxPlugin: ChannelPlugin<ResolvedBotmaxAccount> = {
       const releaseHeartbeat = suspendBotmaxHeartbeat(account.accountId);
       try {
         await sendBotmaxMessage(account.accountId, target, outbound, {
+          replyToId: replyToId ?? undefined,
           threadId: threadId ?? undefined,
         });
       } finally {

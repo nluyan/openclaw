@@ -1,8 +1,10 @@
 import WebSocket from "ws";
 import {
   formatBotmaxOutboundCommandResult,
+  formatBotmaxOutboundFileResult,
   formatBotmaxOutboundMessage,
   type BotmaxOutboundAttachmentInput,
+  type BotmaxFileEncoding,
 } from "./message-format.js";
 import { getBotmaxRuntime } from "./runtime.js";
 import type { ResolvedBotmaxAccount } from "./types.js";
@@ -26,6 +28,7 @@ type BotmaxSendEnvelopeOptions = {
   chatType?: "direct" | "group" | "channel";
   conversationId?: string;
   conversationNativeId?: string;
+  replyToId?: string;
   platform?: string;
   surface?: string;
   botUsername?: string;
@@ -136,6 +139,7 @@ export async function sendBotmaxMessage(
     chatType: options?.chatType,
     conversationId: options?.conversationId,
     conversationNativeId: options?.conversationNativeId,
+    replyToId: options?.replyToId,
     platform: options?.platform,
     surface: options?.surface,
     botUsername: options?.botUsername,
@@ -212,6 +216,44 @@ export async function sendBotmaxCommandResult(params: {
   });
   try {
     conn.log?.(`botmax[${params.accountId}] outbound command result raw: ${payload}`);
+  } catch {
+    // Ignore logging failures to avoid blocking outbound delivery.
+  }
+  await conn.sendText(payload);
+  conn.statusSink?.({ lastOutboundAt: Date.now() });
+}
+
+export async function sendBotmaxFileResult(params: {
+  accountId: string;
+  operation: "read" | "write";
+  path: string;
+  encoding: BotmaxFileEncoding;
+  ok: boolean;
+  output: string;
+  errorCode?: string;
+  data?: unknown;
+  requestId?: string | number | null;
+  platform?: string;
+  surface?: string;
+}): Promise<void> {
+  const conn = getActiveConnection(params.accountId);
+  if (!conn) {
+    throw new Error("Botmax connection is not active");
+  }
+  const payload = formatBotmaxOutboundFileResult({
+    operation: params.operation,
+    path: params.path,
+    encoding: params.encoding,
+    ok: params.ok,
+    output: params.output,
+    errorCode: params.errorCode,
+    data: params.data,
+    requestId: params.requestId,
+    platform: params.platform,
+    surface: params.surface,
+  });
+  try {
+    conn.log?.(`botmax[${params.accountId}] outbound file result raw: ${payload}`);
   } catch {
     // Ignore logging failures to avoid blocking outbound delivery.
   }

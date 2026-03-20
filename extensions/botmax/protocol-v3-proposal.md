@@ -3,7 +3,7 @@
 Status:
 
 - Working contract for the Botmax v3 transport shape.
-- The current runtime uses v3 for BotKeeper <-> OpenClaw text chat, attachments, `command.exec`, and `command.result`.
+- The current runtime uses v3 for BotKeeper <-> OpenClaw text chat, attachments, `command.exec`, `command.result`, `file.read`, `file.write`, and `file.result`.
 - Telegram is the first runtime surface with end-to-end media relay enabled.
 - Current runtime details are documented in [botmax.md](./botmax.md).
 
@@ -508,6 +508,92 @@ Notes:
   }
 }
 ```
+
+## `file.read`, `file.write`, and `file.result`
+
+These are BotKeeper control-plane RPCs for reading and writing files inside the OpenClaw runtime without shelling out through the command transport.
+
+### `file.read`
+
+```json
+{
+  "v": 3,
+  "type": "file.read",
+  "transport": {},
+  "origin": {
+    "platform": "internal",
+    "surface": "internal"
+  },
+  "file": {
+    "operation": "read",
+    "path": "/root/.openclaw/config.json",
+    "encoding": "utf8"
+  }
+}
+```
+
+### `file.write`
+
+```json
+{
+  "v": 3,
+  "type": "file.write",
+  "transport": {},
+  "origin": {
+    "platform": "internal",
+    "surface": "internal"
+  },
+  "file": {
+    "operation": "write",
+    "path": "/root/.openclaw/config.json",
+    "encoding": "utf8",
+    "content": "{ ... }",
+    "ensureDirectory": true
+  }
+}
+```
+
+Rules:
+
+- `file.operation` is `read` or `write`.
+- `file.encoding` currently supports `utf8` and `base64`.
+- `file.write` requires `file.content`.
+- `file.write` may request `ensureDirectory = true` so the plugin creates parent directories before writing.
+
+### `file.result`
+
+```json
+{
+  "v": 3,
+  "type": "file.result",
+  "transport": {},
+  "origin": {
+    "platform": "internal",
+    "surface": "internal"
+  },
+  "file": {
+    "operation": "read",
+    "path": "/root/.openclaw/config.json",
+    "encoding": "utf8"
+  },
+  "result": {
+    "ok": true,
+    "output": "read 128 bytes from /root/.openclaw/config.json",
+    "data": {
+      "path": "/root/.openclaw/config.json",
+      "encoding": "utf8",
+      "content": "{...}",
+      "sizeBytes": 128
+    }
+  }
+}
+```
+
+Failure responses should set:
+
+- `result.ok = false`
+- `result.output` to a human-readable error string
+- `result.errorCode` when a stable machine-readable cause is available, such as `FILE_NOT_FOUND`, `ACCESS_DENIED`, `INVALID_PATH`, `INVALID_ENCODING`, or `INVALID_BASE64`
 
 ## OpenClaw mapping recommendation
 

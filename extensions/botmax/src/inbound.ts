@@ -6,6 +6,17 @@ import type { BotmaxInboundAttachment } from "./message-format.js";
 import { getBotmaxRuntime } from "./runtime.js";
 import type { ResolvedBotmaxAccount } from "./types.js";
 
+function resolveReplyToIdFromPayload(payload: unknown): string | undefined {
+  if (!payload || typeof payload !== "object") {
+    return undefined;
+  }
+
+  const replyToId = (payload as { replyToId?: unknown }).replyToId;
+  return typeof replyToId === "string" && replyToId.trim().length > 0
+    ? replyToId.trim()
+    : undefined;
+}
+
 export async function handleBotmaxInbound(params: {
   senderId: string;
   senderName?: string;
@@ -185,6 +196,7 @@ export async function handleBotmaxInbound(params: {
   let outboundDelivered = 0;
 
   const deliver = async (payload: unknown) => {
+    const replyToId = resolveReplyToIdFromPayload(payload);
     const outbound = await buildOutboundAttachmentsFromReply({
       payload,
       runtime: core,
@@ -205,6 +217,7 @@ export async function handleBotmaxInbound(params: {
           chatType,
           conversationId: normalizedConversationId,
           conversationNativeId: normalizedConversationNativeId,
+          replyToId,
           platform: normalizedProvider,
           surface: normalizedSurface,
           botUsername,
@@ -229,6 +242,7 @@ export async function handleBotmaxInbound(params: {
         chatType,
         conversationId: normalizedConversationId,
         conversationNativeId: normalizedConversationNativeId,
+        replyToId,
         platform: normalizedProvider,
         surface: normalizedSurface,
         botUsername,

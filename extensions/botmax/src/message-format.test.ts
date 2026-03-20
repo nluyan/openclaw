@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatBotmaxOutboundCommandResult,
+  formatBotmaxOutboundFileResult,
   formatBotmaxOutboundMessage,
   formatBotmaxOutboundText,
   parseBotmaxInboundText,
@@ -152,6 +153,39 @@ describe("botmax message format", () => {
       attachments: undefined,
       command: "openclaw devices list",
       timeoutMs: 9000,
+    });
+  });
+
+  it("parses v3 file read frames", () => {
+    const frame = JSON.stringify({
+      jsonrpc: "2.0",
+      method: "botmax.transport",
+      id: "file-req-1",
+      params: {
+        v: 3,
+        type: "file.read",
+        transport: {
+          bridge: "botmax",
+          receivedAtMs: 1773561600000,
+        },
+        origin: {
+          platform: "internal",
+          surface: "internal",
+        },
+        file: {
+          operation: "read",
+          path: "/tmp/demo.txt",
+          encoding: "utf8",
+        },
+      },
+    });
+
+    const parsed = parseBotmaxInboundText(frame);
+    expect(parsed).toEqual({
+      kind: "file.read",
+      requestId: "file-req-1",
+      path: "/tmp/demo.txt",
+      encoding: "utf8",
     });
   });
 
@@ -393,6 +427,34 @@ describe("botmax message format", () => {
     expect(frame.params.message.fullId).toContain("telegram:123:");
   });
 
+  it("formats outbound chat replies with message-level replyTo metadata", () => {
+    const frame = JSON.parse(
+      formatBotmaxOutboundText({
+        recipientId:
+          "msteams:conversation:conversation-1|binding:00000000-0000-0000-0000-000000000001|replyTo:activity-999",
+        text: "hello",
+        replyToId: "msteams:msg:activity-123",
+        platform: "msteams",
+      }),
+    );
+
+    expect(frame).toMatchObject({
+      params: {
+        type: "chat.message",
+        origin: {
+          platform: "msteams",
+          surface: "msteams",
+        },
+        message: {
+          text: "hello",
+          replyTo: {
+            id: "msteams:msg:activity-123",
+          },
+        },
+      },
+    });
+  });
+
   it("formats outbound attachment messages as v3 json-rpc", () => {
     const frame = JSON.parse(
       formatBotmaxOutboundMessage({
@@ -484,6 +546,58 @@ describe("botmax message format", () => {
           ok: true,
           output: "[]",
           data: [],
+        },
+      },
+    });
+  });
+
+  it("formats outbound file result as v3 json-rpc", () => {
+    const frame = JSON.parse(
+      formatBotmaxOutboundFileResult({
+        operation: "read",
+        path: "/tmp/demo.txt",
+        encoding: "utf8",
+        ok: true,
+        output: "read 5 bytes from /tmp/demo.txt",
+        data: {
+          path: "/tmp/demo.txt",
+          encoding: "utf8",
+          content: "hello",
+          sizeBytes: 5,
+        },
+        requestId: "file-req-2",
+      }),
+    );
+
+    expect(frame).toMatchObject({
+      jsonrpc: "2.0",
+      method: "botmax.transport",
+      id: "file-req-2",
+      params: {
+        v: 3,
+        type: "file.result",
+        transport: {
+          bridge: "botmax",
+          receivedAtMs: expect.any(Number),
+        },
+        origin: {
+          platform: "internal",
+          surface: "internal",
+        },
+        file: {
+          operation: "read",
+          path: "/tmp/demo.txt",
+          encoding: "utf8",
+        },
+        result: {
+          ok: true,
+          output: "read 5 bytes from /tmp/demo.txt",
+          data: {
+            path: "/tmp/demo.txt",
+            encoding: "utf8",
+            content: "hello",
+            sizeBytes: 5,
+          },
         },
       },
     });

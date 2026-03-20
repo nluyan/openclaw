@@ -162,6 +162,70 @@
 }
 ```
 
+### File Read / Write Frames
+
+`file.read` and `file.write` are BotKeeper control-plane RPCs for reading and writing files inside the OpenClaw runtime without going through the shell command transport.
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "botmax.transport",
+  "id": "file-001",
+  "params": {
+    "v": 3,
+    "type": "file.read",
+    "transport": {
+      "bridge": "botmax",
+      "receivedAtMs": 1773561600000
+    },
+    "origin": {
+      "platform": "internal",
+      "surface": "internal"
+    },
+    "file": {
+      "operation": "read",
+      "path": "/root/.openclaw/config.json",
+      "encoding": "utf8"
+    }
+  }
+}
+```
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "botmax.transport",
+  "id": "file-001",
+  "params": {
+    "v": 3,
+    "type": "file.result",
+    "transport": {
+      "bridge": "botmax",
+      "receivedAtMs": 1773561600100
+    },
+    "origin": {
+      "platform": "internal",
+      "surface": "internal"
+    },
+    "file": {
+      "operation": "read",
+      "path": "/root/.openclaw/config.json",
+      "encoding": "utf8"
+    },
+    "result": {
+      "ok": true,
+      "output": "read 128 bytes from /root/.openclaw/config.json",
+      "data": {
+        "path": "/root/.openclaw/config.json",
+        "encoding": "utf8",
+        "content": "{...}",
+        "sizeBytes": 128
+      }
+    }
+  }
+}
+```
+
 ## Supported OpenClaw Commands
 
 - `openclaw devices list` -> `device.pair.list`
@@ -187,8 +251,8 @@
 ## Protocol Rules
 
 - BotKeeper <-> OpenClaw only accepts JSON-RPC `botmax.transport` frames with `params.v=3`.
-- OpenClaw accepts `chat.message` and `command.exec`.
-- BotKeeper consumes `chat.message` and `command.result`.
+- OpenClaw accepts `chat.message`, `command.exec`, `file.read`, and `file.write`.
+- BotKeeper consumes `chat.message`, `command.result`, and `file.result`.
 - `conversation.id` is the conversation identity for routing and session scoping.
 - `conversation.replyTargetId` is the concrete delivery target for replies and command results.
 - `sender.id` is the actual sender identity and is separate from the conversation id.
@@ -196,12 +260,14 @@
 - `sender.displayName` and `sender.username` are forwarded so OpenClaw can populate `SenderName` and `SenderUsername`.
 - The Telegram -> BotKeeper bridge currently forwards sender labels, usernames, message ids, reply targets, group titles, and thread ids when Telegram provides them.
 - Botmax chat replies end with the actual outbound message only; the plugin does not append any `<<<done>>>` marker.
+- `file.read` and `file.write` currently support `utf8` and `base64` encodings.
+- `file.write` creates parent directories by default when BotKeeper requests `ensureDirectory = true`.
 
 ## Rich Attachment Model
 
 - The fuller v3 contract, including attachment and file fields, is documented in [protocol-v3-proposal.md](./protocol-v3-proposal.md).
 - The machine-readable schema lives in [protocol-v3.schema.json](./protocol-v3.schema.json).
-- The current runtime implements the v3 text, command, and attachment envelope end-to-end between BotKeeper and the OpenClaw Botmax plugin.
+- The current runtime implements the v3 text, command, attachment, and file-operation envelope end-to-end between BotKeeper and the OpenClaw Botmax plugin.
 - Telegram inbound media currently covers `photo`, `voice`, `audio`, `video`, `document`, and `sticker`.
 - BotKeeper downloads Telegram media, uploads it to the private R2 bucket, and forwards signed `fetchUrl` attachment references to OpenClaw.
 - OpenClaw materializes inbound attachments into temp files and maps them into media-aware inbound context fields such as `MediaPath`, `MediaPaths`, `MediaType`, and `MediaTypes`.

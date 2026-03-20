@@ -6,12 +6,16 @@ const BOTMAX_TRANSPORT_VERSION = 3;
 const CHAT_MESSAGE_TYPE = "chat.message";
 const COMMAND_EXEC_TYPE = "command.exec";
 const COMMAND_RESULT_TYPE = "command.result";
+const FILE_READ_TYPE = "file.read";
+const FILE_WRITE_TYPE = "file.write";
+const FILE_RESULT_TYPE = "file.result";
 const CHAT_TYPE_DIRECT = "direct";
 const CHAT_TYPE_GROUP = "group";
 const CHAT_TYPE_CHANNEL = "channel";
 
 type JsonRpcId = string | number | null;
 type BotmaxChatType = typeof CHAT_TYPE_DIRECT | typeof CHAT_TYPE_GROUP | typeof CHAT_TYPE_CHANNEL;
+export type BotmaxFileEncoding = "utf8" | "base64";
 export type BotmaxAttachmentKind = "image" | "audio" | "video" | "file" | "sticker" | "location";
 export type BotmaxAttachmentSendAs =
   | "photo"
@@ -59,6 +63,14 @@ type BotmaxResultConversationContext = {
   nativeId?: string;
   replyTargetId: string;
   threadId?: string | number;
+};
+
+type BotmaxFileContext = {
+  operation: "read" | "write";
+  path: string;
+  encoding: BotmaxFileEncoding;
+  content?: string;
+  ensureDirectory?: boolean;
 };
 
 type BotmaxSenderContext = {
@@ -179,6 +191,45 @@ type BotmaxTransportCommandResult = {
   result: {
     ok: boolean;
     output: string;
+    errorCode?: string;
+    data?: unknown;
+  };
+  extensions?: Record<string, unknown>;
+};
+
+type BotmaxTransportFileRead = {
+  v: typeof BOTMAX_TRANSPORT_VERSION;
+  type: typeof FILE_READ_TYPE;
+  transport: BotmaxTransportContext;
+  origin: BotmaxOriginContext;
+  file: BotmaxFileContext & {
+    operation: "read";
+  };
+  extensions?: Record<string, unknown>;
+};
+
+type BotmaxTransportFileWrite = {
+  v: typeof BOTMAX_TRANSPORT_VERSION;
+  type: typeof FILE_WRITE_TYPE;
+  transport: BotmaxTransportContext;
+  origin: BotmaxOriginContext;
+  file: BotmaxFileContext & {
+    operation: "write";
+    content: string;
+  };
+  extensions?: Record<string, unknown>;
+};
+
+type BotmaxTransportFileResult = {
+  v: typeof BOTMAX_TRANSPORT_VERSION;
+  type: typeof FILE_RESULT_TYPE;
+  transport: BotmaxTransportContext;
+  origin: BotmaxOriginContext;
+  file: BotmaxFileContext;
+  result: {
+    ok: boolean;
+    output: string;
+    errorCode?: string;
     data?: unknown;
   };
   extensions?: Record<string, unknown>;
@@ -187,7 +238,10 @@ type BotmaxTransportCommandResult = {
 type BotmaxTransportParams =
   | BotmaxTransportChatMessage
   | BotmaxTransportCommandExec
-  | BotmaxTransportCommandResult;
+  | BotmaxTransportCommandResult
+  | BotmaxTransportFileRead
+  | BotmaxTransportFileWrite
+  | BotmaxTransportFileResult;
 
 type BotmaxJsonRpcFrame = {
   jsonrpc: typeof BOTMAX_JSONRPC_VERSION;
@@ -232,7 +286,21 @@ export type BotmaxInboundMessage =
       kind: "command";
       command: string;
       timeoutMs?: number;
-    });
+    })
+  | {
+      kind: "file.read";
+      requestId?: JsonRpcId;
+      path: string;
+      encoding: BotmaxFileEncoding;
+    }
+  | {
+      kind: "file.write";
+      requestId?: JsonRpcId;
+      path: string;
+      encoding: BotmaxFileEncoding;
+      content: string;
+      ensureDirectory: boolean;
+    };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -267,6 +335,20 @@ function normalizeTimestamp(value: unknown): number | undefined {
 
 function normalizeBoolean(value: unknown): boolean | undefined {
   return typeof value === "boolean" ? value : undefined;
+}
+
+function normalizeFileEncoding(value: unknown): BotmaxFileEncoding | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (!normalized || normalized === "utf8" || normalized === "utf-8") {
+    return "utf8";
+  }
+  if (normalized === "base64") {
+    return "base64";
+  }
+  return undefined;
 }
 
 function normalizeThreadId(value: unknown): string | number | undefined {
@@ -366,6 +448,7 @@ function buildMessageContext(params: {
   createdAtMs: number;
   conversationId: string;
   messageId?: string;
+  replyToId?: string;
 }): BotmaxMessageContext {
   const text = normalizeNonEmptyString(params.text);
   const attachments = params.attachments?.filter(Boolean) ?? [];
@@ -380,6 +463,11 @@ function buildMessageContext(params: {
     fullId: `${params.conversationId}:${messageId}`,
     text,
     createdAtMs: params.createdAtMs,
+    replyTo: params.replyToId
+      ? {
+          id: params.replyToId,
+        }
+      : undefined,
     mentions: {
       botMentioned: false,
       mentionedIds: [],
@@ -721,6 +809,33 @@ function parseAuthContext(value: unknown): BotmaxAuthContext | null {
   };
 }
 
+function parseFileContext(value: unknown): BotmaxFileContext | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const operation = normalizeNonEmptyString(value.operation);
+  const path = normalizeNonEmptyString(value.path);
+  const encoding = normalizeFileEncoding(value.encoding);
+  if (!operation || !path || !encoding) {
+    return null;
+  }
+  if (operation !== "read" && operation !== "write") {
+    return null;
+  }
+  const content = typeof value.content === "string" ? value.content : undefined;
+  const ensureDirectory = normalizeBoolean(value.ensureDirectory);
+  if (operation === "write" && content == null) {
+    return null;
+  }
+  return {
+    operation,
+    path,
+    encoding,
+    content,
+    ensureDirectory,
+  };
+}
+
 function buildInboundBase(params: {
   origin: BotmaxOriginContext;
   conversation: BotmaxConversationContext;
@@ -849,6 +964,34 @@ function parseJsonRpcMessage(trimmed: string): BotmaxInboundMessage | null {
     };
   }
 
+  if (type === FILE_READ_TYPE) {
+    const file = parseFileContext(params.file);
+    if (!file || file.operation !== "read") {
+      return null;
+    }
+    return {
+      kind: "file.read",
+      requestId,
+      path: file.path,
+      encoding: file.encoding,
+    };
+  }
+
+  if (type === FILE_WRITE_TYPE) {
+    const file = parseFileContext(params.file);
+    if (!file || file.operation !== "write" || file.content == null) {
+      return null;
+    }
+    return {
+      kind: "file.write",
+      requestId,
+      path: file.path,
+      encoding: file.encoding,
+      content: file.content,
+      ensureDirectory: file.ensureDirectory ?? true,
+    };
+  }
+
   if (type === COMMAND_RESULT_TYPE) {
     const conversation = parseResultConversationContext(params.conversation);
     if (!conversation) {
@@ -891,6 +1034,7 @@ export function formatBotmaxOutboundMessage(params: {
   chatType?: BotmaxChatType;
   conversationId?: string;
   conversationNativeId?: string;
+  replyToId?: string;
   platform?: string;
   surface?: string;
   botUsername?: string;
@@ -938,6 +1082,7 @@ export function formatBotmaxOutboundMessage(params: {
         createdAtMs: now,
         conversationId: conversation.id,
         messageId: params.messageId,
+        replyToId: normalizeNonEmptyString(params.replyToId),
       }),
       auth: {
         deliveryAuthenticated: true,
@@ -956,6 +1101,7 @@ export function formatBotmaxOutboundText(params: {
   chatType?: BotmaxChatType;
   conversationId?: string;
   conversationNativeId?: string;
+  replyToId?: string;
   platform?: string;
   surface?: string;
   botUsername?: string;
@@ -1023,6 +1169,48 @@ export function formatBotmaxOutboundCommandResult(params: {
       result: {
         ok: params.ok,
         output: params.output ?? "",
+        data: params.data,
+      },
+    },
+    params.requestId,
+  );
+}
+
+export function formatBotmaxOutboundFileResult(params: {
+  operation: "read" | "write";
+  path: string;
+  encoding: BotmaxFileEncoding;
+  ok: boolean;
+  output: string;
+  errorCode?: string;
+  data?: unknown;
+  requestId?: JsonRpcId;
+  platform?: string;
+  surface?: string;
+}): string {
+  const path = normalizeNonEmptyString(params.path);
+  if (!path) {
+    throw new Error("Botmax file result requires path");
+  }
+  const platform = params.platform?.trim() || "internal";
+  return stringifyTransportFrame(
+    {
+      v: BOTMAX_TRANSPORT_VERSION,
+      type: FILE_RESULT_TYPE,
+      transport: buildTransportContext(Date.now()),
+      origin: buildOriginContext({
+        platform,
+        surface: params.surface,
+      }),
+      file: {
+        operation: params.operation,
+        path,
+        encoding: params.encoding,
+      },
+      result: {
+        ok: params.ok,
+        output: params.output ?? "",
+        errorCode: normalizeNonEmptyString(params.errorCode),
         data: params.data,
       },
     },
