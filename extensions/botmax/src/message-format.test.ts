@@ -23,6 +23,7 @@ describe("botmax message format", () => {
         origin: {
           platform: "telegram",
           surface: "telegram",
+          accountId: "00000000-0000-0000-0000-000000000001",
           botUsername: "demo_bot",
         },
         conversation: {
@@ -62,6 +63,7 @@ describe("botmax message format", () => {
       senderId: "telegram:123",
       senderName: "Alice",
       senderUsername: "alice_demo",
+      accountId: "00000000-0000-0000-0000-000000000001",
       provider: "telegram",
       surface: "telegram",
       botUsername: "demo_bot",
@@ -102,6 +104,7 @@ describe("botmax message format", () => {
         origin: {
           platform: "telegram",
           surface: "telegram",
+          accountId: "00000000-0000-0000-0000-000000000002",
         },
         conversation: {
           id: "telegram:123",
@@ -130,6 +133,7 @@ describe("botmax message format", () => {
       senderId: "telegram:123",
       senderName: "Alice",
       senderUsername: undefined,
+      accountId: "00000000-0000-0000-0000-000000000002",
       provider: "telegram",
       surface: "telegram",
       botUsername: undefined,

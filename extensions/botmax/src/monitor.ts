@@ -192,6 +192,7 @@ export function monitorBotmaxAccount(options: BotmaxMonitorOptions): { stop: () 
               senderId: inbound.senderId,
               senderName: inbound.senderName,
               senderUsername: inbound.senderUsername,
+              accountId: inbound.accountId,
               body: inbound.body,
               chatType: inbound.chatType,
               chatId: inbound.chatId,

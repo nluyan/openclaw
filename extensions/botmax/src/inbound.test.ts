@@ -67,15 +67,16 @@ describe("botmax inbound replies", () => {
     const dispatchReplyWithBufferedBlockDispatcher = vi.fn(async ({ dispatcherOptions }) => {
       await dispatcherOptions.deliver({ text: "reply text" });
     });
+    const resolveAgentRoute = vi.fn(() => ({
+      agentId: "agent-1",
+      sessionKey: "session-1",
+      accountId: "default",
+    }));
 
     setBotmaxRuntime({
       channel: {
         routing: {
-          resolveAgentRoute: vi.fn(() => ({
-            agentId: "agent-1",
-            sessionKey: "session-1",
-            accountId: "default",
-          })),
+          resolveAgentRoute,
         },
         session: {
           resolveStorePath: vi.fn(() => "/tmp/store"),
@@ -120,6 +121,12 @@ describe("botmax inbound replies", () => {
     expect(dispatchReplyWithBufferedBlockDispatcher).toHaveBeenCalledTimes(1);
     expect(sendBotmaxMessageMock).not.toHaveBeenCalled();
     expect(sendBotmaxTextMock).toHaveBeenCalledTimes(1);
+    expect(resolveAgentRoute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel: "botmax",
+        accountId: "default",
+      }),
+    );
     expect(sendBotmaxTextMock).toHaveBeenCalledWith("default", "telegram:123", "reply text", {
       requestId: "req-1",
       chatType: "direct",
@@ -354,6 +361,78 @@ describe("botmax inbound replies", () => {
         botUsername: undefined,
         threadId: undefined,
       },
+    );
+  });
+
+  it("routes inbound messages by transport accountId when provided", async () => {
+    const resolveAgentRoute = vi.fn(() => ({
+      agentId: "agent-2",
+      sessionKey: "session-2",
+      accountId: "00000000-0000-0000-0000-0000000000ab",
+    }));
+    const finalizeInboundContext = vi.fn((ctx) => ctx);
+
+    setBotmaxRuntime({
+      channel: {
+        routing: {
+          resolveAgentRoute,
+        },
+        session: {
+          resolveStorePath: vi.fn(() => "/tmp/store"),
+          readSessionUpdatedAt: vi.fn(() => undefined),
+          recordInboundSession: vi.fn(async () => {}),
+        },
+        reply: {
+          resolveEnvelopeFormatOptions: vi.fn(() => ({})),
+          formatAgentEnvelope: vi.fn(() => "envelope"),
+          finalizeInboundContext,
+          dispatchReplyWithBufferedBlockDispatcher: vi.fn(async ({ dispatcherOptions }) => {
+            await dispatcherOptions.deliver({ text: "reply text" });
+          }),
+        },
+        text: {
+          resolveMarkdownTableMode: vi.fn(() => "plain"),
+          convertMarkdownTables: vi.fn((text) => text),
+        },
+      },
+    } as never);
+
+    await handleBotmaxInbound({
+      senderId: "telegram:123",
+      accountId: "00000000-0000-0000-0000-0000000000ab",
+      body: "hello",
+      chatType: "direct",
+      replyTargetId: "telegram:123",
+      account: {
+        accountId: "gateway-account",
+        enabled: true,
+        server: "wss://botmax.example/ws",
+        textChunkLimit: 2000,
+      },
+      config: {} as never,
+      runtime: {
+        error: vi.fn(),
+        log: vi.fn(),
+        exit: vi.fn(),
+      },
+    });
+
+    expect(resolveAgentRoute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel: "botmax",
+        accountId: "00000000-0000-0000-0000-0000000000ab",
+      }),
+    );
+    expect(finalizeInboundContext).toHaveBeenCalledWith(
+      expect.objectContaining({
+        AccountId: "00000000-0000-0000-0000-0000000000ab",
+      }),
+    );
+    expect(sendBotmaxTextMock).toHaveBeenCalledWith(
+      "gateway-account",
+      "telegram:123",
+      "reply text",
+      expect.any(Object),
     );
   });
 });

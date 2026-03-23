@@ -254,6 +254,7 @@ type BotmaxInboundBase = {
   senderId: string;
   senderName: string;
   senderUsername?: string;
+  accountId?: string;
   provider: string;
   surface: string;
   botUsername?: string;
@@ -851,6 +852,7 @@ function buildInboundBase(params: {
     senderId: params.sender.id,
     senderName,
     senderUsername: params.sender.username,
+    accountId: params.origin.accountId,
     provider: params.origin.platform,
     surface: params.origin.surface?.trim() || params.origin.platform,
     botUsername: params.origin.botUsername,

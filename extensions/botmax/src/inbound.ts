@@ -21,6 +21,7 @@ export async function handleBotmaxInbound(params: {
   senderId: string;
   senderName?: string;
   senderUsername?: string;
+  accountId?: string;
   body: string;
   chatType: "direct" | "group" | "channel";
   chatId?: string;
@@ -52,6 +53,7 @@ export async function handleBotmaxInbound(params: {
     senderId,
     senderName,
     senderUsername,
+    accountId,
     body,
     chatType,
     chatId,
@@ -99,13 +101,14 @@ export async function handleBotmaxInbound(params: {
     ? conversationTitle?.trim() || normalizedConversationId
     : normalizedSenderName;
   const inboundTimestamp = timestampMs ?? Date.now();
+  const routingAccountId = accountId?.trim() || account.accountId;
 
   statusSink?.({ lastInboundAt: Date.now() });
 
   const route = core.channel.routing.resolveAgentRoute({
     cfg: config,
     channel: "botmax",
-    accountId: account.accountId,
+    accountId: routingAccountId,
     peer: {
       kind: isGroupConversation ? "group" : "direct",
       id: routePeerId,
