@@ -4,7 +4,11 @@ import { buildOutboundAttachmentsFromReply, materializeInboundAttachments } from
 import { sendBotmaxMessage, sendBotmaxText, suspendBotmaxHeartbeat } from "./connection.js";
 import type { BotmaxInboundAttachment } from "./message-format.js";
 import type { OpenClawConfig, RuntimeEnv } from "./runtime-api.js";
-import { chunkTextForOutbound, createReplyPrefixOptions } from "./runtime-api.js";
+import {
+  buildUntrustedChannelMetadata,
+  chunkTextForOutbound,
+  createReplyPrefixOptions,
+} from "./runtime-api.js";
 import { getBotmaxRuntime } from "./runtime.js";
 import type { ResolvedBotmaxAccount } from "./types.js";
 
@@ -82,6 +86,81 @@ function buildBotmaxReplyPayloadSummary(payload: unknown): string {
 function normalizeBotmaxLogPreview(value: string | undefined): string | undefined {
   const trimmed = value?.replace(/\s+/g, " ").trim();
   return trimmed ? trimmed.slice(0, BOTMAX_REPLY_LOG_PREVIEW_MAX_CHARS) : undefined;
+}
+
+function normalizeOptionalString(value: string | undefined | null): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function tryParseEmailSenderAddress(senderId: string): string | undefined {
+  const trimmed = senderId.trim();
+  if (!trimmed.toLowerCase().startsWith("email:")) {
+    return undefined;
+  }
+  return normalizeOptionalString(trimmed.slice("email:".length));
+}
+
+function areEqualIgnoreCase(left: string | undefined, right: string | undefined): boolean {
+  return Boolean(
+    left && right && left.localeCompare(right, undefined, { sensitivity: "accent" }) === 0,
+  );
+}
+
+function formatEmailFromRaw(displayName: string, address: string): string {
+  return `${JSON.stringify(displayName)} <${address}>`;
+}
+
+function appendEmailMetadataUntrustedContext(params: {
+  provider: string;
+  subject?: string;
+  senderId: string;
+  senderName?: string;
+  existing: unknown;
+}): string[] | undefined {
+  const existing = Array.isArray(params.existing)
+    ? params.existing.filter(
+        (entry): entry is string => typeof entry === "string" && entry.trim().length > 0,
+      )
+    : [];
+  if (params.provider.trim().localeCompare("email", undefined, { sensitivity: "accent" }) !== 0) {
+    return existing.length > 0 ? existing : undefined;
+  }
+
+  const subject = normalizeOptionalString(params.subject);
+  const fromAddress = tryParseEmailSenderAddress(params.senderId);
+  const rawDisplayName = normalizeOptionalString(params.senderName);
+  const fromDisplayName =
+    rawDisplayName &&
+    !areEqualIgnoreCase(rawDisplayName, params.senderId) &&
+    !areEqualIgnoreCase(rawDisplayName, fromAddress)
+      ? rawDisplayName
+      : undefined;
+
+  const entries = [
+    subject ? `subject: ${subject}` : undefined,
+    fromDisplayName ? `from_display_name: ${fromDisplayName}` : undefined,
+    fromAddress ? `from_address: ${fromAddress}` : undefined,
+    fromDisplayName && fromAddress
+      ? `from_raw: ${formatEmailFromRaw(fromDisplayName, fromAddress)}`
+      : undefined,
+  ].filter((entry): entry is string => Boolean(entry));
+  if (entries.length === 0) {
+    return existing.length > 0 ? existing : undefined;
+  }
+
+  const metadata = buildUntrustedChannelMetadata({
+    source: "email",
+    label: "Email metadata",
+    entries,
+  });
+  if (!metadata) {
+    return existing.length > 0 ? existing : undefined;
+  }
+  if (existing.includes(metadata)) {
+    return existing;
+  }
+  return [...existing, metadata];
 }
 
 function summarizeTranscriptAssistantEntry(entry: unknown): Record<string, unknown> | null {
@@ -318,6 +397,15 @@ export async function handleBotmaxInbound(params: {
     runtime: core,
   });
   const effectiveTranscript = transcript?.trim() || materializedAttachments.transcript;
+  const existingUntrustedContext = (materializedAttachments.mediaPayload as Record<string, unknown>)
+    .UntrustedContext;
+  const untrustedContext = appendEmailMetadataUntrustedContext({
+    provider: normalizedProvider,
+    subject: conversationTitle,
+    senderId,
+    senderName: normalizedSenderName,
+    existing: existingUntrustedContext,
+  });
 
   const ctxPayload = core.channel.reply.finalizeInboundContext({
     Body: envelopeBody,
@@ -353,6 +441,7 @@ export async function handleBotmaxInbound(params: {
     OriginatingTo: replyTargetId,
     CommandAuthorized: commandAuthorized ?? true,
     ...materializedAttachments.mediaPayload,
+    UntrustedContext: untrustedContext,
   });
 
   await core.channel.session.recordInboundSession({

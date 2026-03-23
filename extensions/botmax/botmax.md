@@ -263,6 +263,7 @@
 - `sender.id` is the actual sender identity and is separate from the conversation id.
 - `origin.platform` is forwarded into OpenClaw as the real upstream provider instead of collapsing everything to `botmax`.
 - `sender.displayName` and `sender.username` are forwarded so OpenClaw can populate `SenderName` and `SenderUsername`.
+- For `origin.platform = email`, the Botmax plugin also appends the inbound email subject and parsed `From` fields into OpenClaw's existing `UntrustedContext` metadata block instead of rewriting `Body` or `BodyForCommands`.
 - The Telegram -> BotKeeper bridge currently forwards sender labels, usernames, message ids, reply targets, group titles, and thread ids when Telegram provides them.
 - Botmax chat replies end with the actual outbound message only; the plugin does not append any `<<<done>>>` marker.
 - `file.read` and `file.write` currently support `utf8` and `base64` encodings.

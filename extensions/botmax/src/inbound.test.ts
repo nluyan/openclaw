@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setBotmaxRuntime } from "./runtime.js";
 
 const {
+  buildUntrustedChannelMetadataMock,
   sendBotmaxMessageMock,
   sendBotmaxTextMock,
   releaseHeartbeatMock,
@@ -12,6 +13,10 @@ const {
 } = vi.hoisted(() => {
   const releaseHeartbeatMock = vi.fn();
   return {
+    buildUntrustedChannelMetadataMock: vi.fn(
+      (params: { source: string; label: string; entries: string[] }) =>
+        `UNTRUSTED channel metadata (${params.source})\n${params.label}:\n${params.entries.join("\n")}`,
+    ),
     sendBotmaxMessageMock: vi.fn(),
     sendBotmaxTextMock: vi.fn(),
     releaseHeartbeatMock,
@@ -27,6 +32,7 @@ vi.mock("node:fs/promises", () => ({
 }));
 
 vi.mock("./runtime-api.js", () => ({
+  buildUntrustedChannelMetadata: buildUntrustedChannelMetadataMock,
   chunkTextForOutbound: vi.fn((text: string) => [text]),
   createReplyPrefixOptions: vi.fn(() => ({ onModelSelected: undefined })),
 }));
@@ -51,6 +57,7 @@ beforeEach(() => {
   suspendBotmaxHeartbeatMock.mockClear();
   materializeInboundAttachmentsMock.mockReset();
   buildOutboundAttachmentsFromReplyMock.mockReset();
+  buildUntrustedChannelMetadataMock.mockClear();
   materializeInboundAttachmentsMock.mockResolvedValue({
     mediaPayload: {},
     transcript: undefined,
@@ -221,6 +228,260 @@ describe("botmax inbound replies", () => {
       }),
     );
     expect(resolveAgentRoute).not.toHaveBeenCalled();
+  });
+
+  it("injects email subject and sender metadata into untrusted context", async () => {
+    const finalizeInboundContext = vi.fn((ctx) => ctx);
+
+    setBotmaxRuntime({
+      channel: {
+        routing: {
+          resolveAgentRoute: vi.fn(() => ({
+            agentId: "agent-1",
+            sessionKey: "session-1",
+            accountId: "default",
+          })),
+        },
+        session: {
+          resolveStorePath: vi.fn(() => "/tmp/store"),
+          readSessionUpdatedAt: vi.fn(() => undefined),
+          recordInboundSession: vi.fn(async () => {}),
+        },
+        reply: {
+          resolveEnvelopeFormatOptions: vi.fn(() => ({})),
+          formatAgentEnvelope: vi.fn(() => "envelope"),
+          finalizeInboundContext,
+          dispatchReplyWithBufferedBlockDispatcher: vi.fn(async ({ dispatcherOptions }) => {
+            await dispatcherOptions.deliver({ text: "reply text" });
+          }),
+        },
+        text: {
+          resolveMarkdownTableMode: vi.fn(() => "plain"),
+          convertMarkdownTables: vi.fn((text) => text),
+        },
+      },
+    } as never);
+
+    await handleBotmaxInbound({
+      senderId: "email:alice@example.com",
+      senderName: "Alice Cooper",
+      body: "hello",
+      chatType: "direct",
+      conversationTitle: "Deployment Status",
+      provider: "email",
+      replyTargetId: "email-msg:reply-target|binding:test",
+      account: {
+        accountId: "default",
+        enabled: true,
+        server: "wss://botmax.example/ws",
+        textChunkLimit: 2000,
+      },
+      config: {},
+      runtime: {
+        error: vi.fn(),
+        log: vi.fn(),
+        exit: vi.fn(),
+      },
+    });
+
+    const untrusted = finalizeInboundContext.mock.calls[0]?.[0]?.UntrustedContext;
+    expect(untrusted).toHaveLength(1);
+    expect(untrusted?.[0]).toContain("subject: Deployment Status");
+    expect(untrusted?.[0]).toContain("from_display_name: Alice Cooper");
+    expect(untrusted?.[0]).toContain("from_address: alice@example.com");
+    expect(untrusted?.[0]).toContain('from_raw: "Alice Cooper" <alice@example.com>');
+  });
+
+  it("injects email address without display name fallback metadata", async () => {
+    const finalizeInboundContext = vi.fn((ctx) => ctx);
+
+    setBotmaxRuntime({
+      channel: {
+        routing: {
+          resolveAgentRoute: vi.fn(() => ({
+            agentId: "agent-1",
+            sessionKey: "session-1",
+            accountId: "default",
+          })),
+        },
+        session: {
+          resolveStorePath: vi.fn(() => "/tmp/store"),
+          readSessionUpdatedAt: vi.fn(() => undefined),
+          recordInboundSession: vi.fn(async () => {}),
+        },
+        reply: {
+          resolveEnvelopeFormatOptions: vi.fn(() => ({})),
+          formatAgentEnvelope: vi.fn(() => "envelope"),
+          finalizeInboundContext,
+          dispatchReplyWithBufferedBlockDispatcher: vi.fn(async ({ dispatcherOptions }) => {
+            await dispatcherOptions.deliver({ text: "reply text" });
+          }),
+        },
+        text: {
+          resolveMarkdownTableMode: vi.fn(() => "plain"),
+          convertMarkdownTables: vi.fn((text) => text),
+        },
+      },
+    } as never);
+
+    await handleBotmaxInbound({
+      senderId: "email:alice@example.com",
+      body: "hello",
+      chatType: "direct",
+      provider: "email",
+      replyTargetId: "email-msg:reply-target|binding:test",
+      account: {
+        accountId: "default",
+        enabled: true,
+        server: "wss://botmax.example/ws",
+        textChunkLimit: 2000,
+      },
+      config: {},
+      runtime: {
+        error: vi.fn(),
+        log: vi.fn(),
+        exit: vi.fn(),
+      },
+    });
+
+    const untrusted = finalizeInboundContext.mock.calls[0]?.[0]?.UntrustedContext;
+    expect(untrusted).toHaveLength(1);
+    expect(untrusted?.[0]).toContain("from_address: alice@example.com");
+    expect(untrusted?.[0]).not.toContain("from_display_name:");
+    expect(untrusted?.[0]).not.toContain("from_raw:");
+  });
+
+  it("does not inject email metadata for non-email providers", async () => {
+    const finalizeInboundContext = vi.fn((ctx) => ctx);
+
+    setBotmaxRuntime({
+      channel: {
+        routing: {
+          resolveAgentRoute: vi.fn(() => ({
+            agentId: "agent-1",
+            sessionKey: "session-1",
+            accountId: "default",
+          })),
+        },
+        session: {
+          resolveStorePath: vi.fn(() => "/tmp/store"),
+          readSessionUpdatedAt: vi.fn(() => undefined),
+          recordInboundSession: vi.fn(async () => {}),
+        },
+        reply: {
+          resolveEnvelopeFormatOptions: vi.fn(() => ({})),
+          formatAgentEnvelope: vi.fn(() => "envelope"),
+          finalizeInboundContext,
+          dispatchReplyWithBufferedBlockDispatcher: vi.fn(async ({ dispatcherOptions }) => {
+            await dispatcherOptions.deliver({ text: "reply text" });
+          }),
+        },
+        text: {
+          resolveMarkdownTableMode: vi.fn(() => "plain"),
+          convertMarkdownTables: vi.fn((text) => text),
+        },
+      },
+    } as never);
+
+    await handleBotmaxInbound({
+      senderId: "telegram:123",
+      senderName: "Alice",
+      body: "hello",
+      chatType: "direct",
+      conversationTitle: "Release Squad",
+      provider: "telegram",
+      replyTargetId: "telegram:123",
+      account: {
+        accountId: "default",
+        enabled: true,
+        server: "wss://botmax.example/ws",
+        textChunkLimit: 2000,
+      },
+      config: {},
+      runtime: {
+        error: vi.fn(),
+        log: vi.fn(),
+        exit: vi.fn(),
+      },
+    });
+
+    expect(finalizeInboundContext.mock.calls[0]?.[0]?.UntrustedContext).toBeUndefined();
+  });
+
+  it("appends email metadata to existing untrusted context without duplicating it", async () => {
+    const finalizeInboundContext = vi.fn((ctx) => ctx);
+    const emailMetadata = buildUntrustedChannelMetadataMock({
+      source: "email",
+      label: "Email metadata",
+      entries: [
+        "subject: Deployment Status",
+        "from_display_name: Alice Cooper",
+        "from_address: alice@example.com",
+        'from_raw: "Alice Cooper" <alice@example.com>',
+      ],
+    });
+    materializeInboundAttachmentsMock.mockResolvedValueOnce({
+      mediaPayload: {
+        UntrustedContext: ["existing metadata", emailMetadata],
+      },
+      transcript: undefined,
+    });
+
+    setBotmaxRuntime({
+      channel: {
+        routing: {
+          resolveAgentRoute: vi.fn(() => ({
+            agentId: "agent-1",
+            sessionKey: "session-1",
+            accountId: "default",
+          })),
+        },
+        session: {
+          resolveStorePath: vi.fn(() => "/tmp/store"),
+          readSessionUpdatedAt: vi.fn(() => undefined),
+          recordInboundSession: vi.fn(async () => {}),
+        },
+        reply: {
+          resolveEnvelopeFormatOptions: vi.fn(() => ({})),
+          formatAgentEnvelope: vi.fn(() => "envelope"),
+          finalizeInboundContext,
+          dispatchReplyWithBufferedBlockDispatcher: vi.fn(async ({ dispatcherOptions }) => {
+            await dispatcherOptions.deliver({ text: "reply text" });
+          }),
+        },
+        text: {
+          resolveMarkdownTableMode: vi.fn(() => "plain"),
+          convertMarkdownTables: vi.fn((text) => text),
+        },
+      },
+    } as never);
+
+    await handleBotmaxInbound({
+      senderId: "email:alice@example.com",
+      senderName: "Alice Cooper",
+      body: "hello",
+      chatType: "direct",
+      conversationTitle: "Deployment Status",
+      provider: "email",
+      replyTargetId: "email-msg:reply-target|binding:test",
+      account: {
+        accountId: "default",
+        enabled: true,
+        server: "wss://botmax.example/ws",
+        textChunkLimit: 2000,
+      },
+      config: {},
+      runtime: {
+        error: vi.fn(),
+        log: vi.fn(),
+        exit: vi.fn(),
+      },
+    });
+
+    expect(finalizeInboundContext.mock.calls[0]?.[0]?.UntrustedContext).toEqual([
+      "existing metadata",
+      emailMetadata,
+    ]);
   });
 
   it("logs skip diagnostics when dispatch completes without an outbound reply", async () => {
