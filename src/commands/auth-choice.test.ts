@@ -31,7 +31,7 @@ import {
   MINIMAX_CN_API_BASE_URL,
   ZAI_CODING_CN_BASE_URL,
   ZAI_CODING_GLOBAL_BASE_URL,
-} from "../plugin-sdk/provider-models.js";
+} from "../plugins/provider-model-definitions.js";
 import type { ProviderPlugin } from "../plugins/types.js";
 import { registerProviderPlugins } from "../test-utils/plugin-registration.js";
 import type { WizardPrompter } from "../wizard/prompts.js";
@@ -50,7 +50,7 @@ import {
 
 type DetectZaiEndpoint = typeof import("./zai-endpoint-detect.js").detectZaiEndpoint;
 
-vi.mock("../providers/github-copilot-auth.js", () => ({
+vi.mock("../../extensions/github-copilot/login.js", () => ({
   githubCopilotLoginCommand: vi.fn(async () => {}),
 }));
 
