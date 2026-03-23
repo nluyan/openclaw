@@ -121,6 +121,44 @@ export type DispatchFromConfigResult = {
   counts: Record<ReplyDispatchKind, number>;
 };
 
+function summarizeReplyPayloadForDebug(
+  payload: ReplyPayload | null | undefined,
+): Record<string, unknown> {
+  if (!payload) {
+    return { kind: "nullish" };
+  }
+  return {
+    textPreview:
+      typeof payload.text === "string"
+        ? payload.text.replace(/\s+/g, " ").trim().slice(0, 160) || undefined
+        : undefined,
+    hasMedia: resolveSendableOutboundReplyParts(payload).hasMedia,
+    replyToId: payload.replyToId ?? undefined,
+    isReasoning: payload.isReasoning === true,
+    isError: payload.isError === true,
+    audioAsVoice: payload.audioAsVoice === true,
+  };
+}
+
+function summarizeReplyResultForDebug(
+  replyResult: ReplyPayload | ReplyPayload[] | null | undefined,
+): string {
+  if (!replyResult) {
+    return JSON.stringify({ kind: "empty", value: replyResult ?? null });
+  }
+  if (Array.isArray(replyResult)) {
+    return JSON.stringify({
+      kind: "array",
+      length: replyResult.length,
+      items: replyResult.slice(0, 3).map((payload) => summarizeReplyPayloadForDebug(payload)),
+    });
+  }
+  return JSON.stringify({
+    kind: "single",
+    item: summarizeReplyPayloadForDebug(replyResult),
+  });
+}
+
 export async function dispatchReplyFromConfig(params: {
   ctx: FinalizedMsgContext;
   cfg: OpenClawConfig;
@@ -609,6 +647,9 @@ export async function dispatchReplyFromConfig(params: {
       },
       cfg,
     );
+    logVerbose(
+      `dispatch-from-config: replyResult session=${ctx.SessionKey ?? "unknown"} summary=${summarizeReplyResultForDebug(replyResult)}`,
+    );
 
     if (ctx.AcpDispatchTailAfterReset === true) {
       // Command handling prepared a trailing prompt after ACP in-place reset.
@@ -637,6 +678,9 @@ export async function dispatchReplyFromConfig(params: {
     }
 
     const replies = replyResult ? (Array.isArray(replyResult) ? replyResult : [replyResult]) : [];
+    logVerbose(
+      `dispatch-from-config: normalized replies session=${ctx.SessionKey ?? "unknown"} count=${replies.length}`,
+    );
 
     let queuedFinal = false;
     let routedFinalCount = 0;
@@ -677,7 +721,11 @@ export async function dispatchReplyFromConfig(params: {
           routedFinalCount += 1;
         }
       } else {
-        queuedFinal = dispatcher.sendFinalReply(ttsReply) || queuedFinal;
+        const didQueue = dispatcher.sendFinalReply(ttsReply);
+        logVerbose(
+          `dispatch-from-config: sendFinalReply session=${ctx.SessionKey ?? "unknown"} queued=${didQueue} payload=${JSON.stringify(summarizeReplyPayloadForDebug(ttsReply))}`,
+        );
+        queuedFinal = didQueue || queuedFinal;
       }
     }
 
@@ -742,6 +790,9 @@ export async function dispatchReplyFromConfig(params: {
 
     const counts = dispatcher.getQueuedCounts();
     counts.final += routedFinalCount;
+    logVerbose(
+      `dispatch-from-config: completed session=${ctx.SessionKey ?? "unknown"} queuedFinal=${queuedFinal} counts=${JSON.stringify(counts)}`,
+    );
     recordProcessed(
       "completed",
       pluginFallbackReason ? { reason: pluginFallbackReason } : undefined,

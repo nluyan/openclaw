@@ -141,6 +141,7 @@ Trusted routing metadata for the active conversation.
   "nativeId": "-1001234567890",
   "kind": "group",
   "replyTargetId": "telegram:-1001234567890",
+  "agentId": "main",
   "title": "Release Squad",
   "channelName": null,
   "spaceName": null,
@@ -155,6 +156,7 @@ Recommended rules:
 
 - `id` is the canonical Botmax conversation id.
 - `replyTargetId` is where replies should go.
+- `agentId` is an optional trusted OpenClaw ingress target. When present, the Botmax plugin should route directly to that agent instead of relying on static OpenClaw `bindings`.
 - For direct messages, `replyTargetId` usually equals `id`.
 - For group or channel messages, `id` is the group or channel conversation id, not the sender id.
 - `threadId` is provider-native and may be a string or a number serialized as a string.

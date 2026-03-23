@@ -1,5 +1,5 @@
-import type { OpenClawConfig } from "openclaw/plugin-sdk";
-import { DEFAULT_ACCOUNT_ID } from "openclaw/plugin-sdk";
+import type { OpenClawConfig } from "./runtime-api.js";
+import { DEFAULT_ACCOUNT_ID } from "./runtime-api.js";
 import type { BotmaxChannelConfig, ResolvedBotmaxAccount } from "./types.js";
 
 const DEFAULT_TEXT_CHUNK_LIMIT = 2000;

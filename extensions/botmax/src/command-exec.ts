@@ -1,10 +1,4 @@
 import {
-  approveDevicePairing,
-  listDevicePairing,
-  rejectDevicePairing,
-  runPluginCommandWithTimeout,
-} from "openclaw/plugin-sdk";
-import {
   approveNodePairingLocally,
   clearDevicePairingLocally,
   listNodePairingLocally,
@@ -14,6 +8,12 @@ import {
   revokeDeviceTokenLocally,
   rotateDeviceTokenLocally,
 } from "./local-state-commands.js";
+import {
+  approveDevicePairing,
+  listDevicePairing,
+  rejectDevicePairing,
+  runPluginCommandWithTimeout,
+} from "./runtime-api.js";
 
 type CommandMapping =
   | {

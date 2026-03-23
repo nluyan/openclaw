@@ -14,7 +14,7 @@ const approveNodePairingLocallyMock = vi.fn();
 const rejectNodePairingLocallyMock = vi.fn();
 const renamePairedNodeLocallyMock = vi.fn();
 
-vi.mock("openclaw/plugin-sdk", () => ({
+vi.mock("./runtime-api.js", () => ({
   listDevicePairing: (...args: unknown[]) => listDevicePairingMock(...args),
   approveDevicePairing: (...args: unknown[]) => approveDevicePairingMock(...args),
   rejectDevicePairing: (...args: unknown[]) => rejectDevicePairingMock(...args),

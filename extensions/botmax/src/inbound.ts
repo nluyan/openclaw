@@ -1,10 +1,37 @@
-import type { OpenClawConfig, RuntimeEnv } from "openclaw/plugin-sdk";
-import { chunkTextForOutbound, createReplyPrefixOptions } from "openclaw/plugin-sdk";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { buildOutboundAttachmentsFromReply, materializeInboundAttachments } from "./attachments.js";
 import { sendBotmaxMessage, sendBotmaxText, suspendBotmaxHeartbeat } from "./connection.js";
 import type { BotmaxInboundAttachment } from "./message-format.js";
+import type { OpenClawConfig, RuntimeEnv } from "./runtime-api.js";
+import { chunkTextForOutbound, createReplyPrefixOptions } from "./runtime-api.js";
 import { getBotmaxRuntime } from "./runtime.js";
 import type { ResolvedBotmaxAccount } from "./types.js";
+
+const DEFAULT_AGENT_ID = "main";
+const VALID_AGENT_ID_RE = /^[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?$/i;
+const INVALID_AGENT_ID_CHARS_RE = /[^a-z0-9_-]+/g;
+const LEADING_DASH_RE = /^-+/;
+const TRAILING_DASH_RE = /-+$/;
+const BOTMAX_REPLY_LOG_PREVIEW_MAX_CHARS = 160;
+
+function normalizeBotmaxAgentId(value: string | undefined | null): string {
+  const trimmed = (value ?? "").trim();
+  if (!trimmed) {
+    return DEFAULT_AGENT_ID;
+  }
+  if (VALID_AGENT_ID_RE.test(trimmed)) {
+    return trimmed.toLowerCase();
+  }
+  return (
+    trimmed
+      .toLowerCase()
+      .replace(INVALID_AGENT_ID_CHARS_RE, "-")
+      .replace(LEADING_DASH_RE, "")
+      .replace(TRAILING_DASH_RE, "")
+      .slice(0, 64) || DEFAULT_AGENT_ID
+  );
+}
 
 function resolveReplyToIdFromPayload(payload: unknown): string | undefined {
   if (!payload || typeof payload !== "object") {
@@ -17,11 +44,144 @@ function resolveReplyToIdFromPayload(payload: unknown): string | undefined {
     : undefined;
 }
 
+function buildBotmaxReplyPayloadSummary(payload: unknown): string {
+  if (!payload || typeof payload !== "object") {
+    return `type=${typeof payload}`;
+  }
+
+  const record = payload as {
+    text?: unknown;
+    mediaUrl?: unknown;
+    mediaUrls?: unknown;
+    replyToId?: unknown;
+    audioAsVoice?: unknown;
+  };
+  const text =
+    typeof record.text === "string" && record.text.trim().length > 0
+      ? record.text.replace(/\s+/g, " ").trim().slice(0, BOTMAX_REPLY_LOG_PREVIEW_MAX_CHARS)
+      : undefined;
+  const mediaUrls = Array.isArray(record.mediaUrls)
+    ? record.mediaUrls.filter(
+        (entry): entry is string => typeof entry === "string" && entry.trim().length > 0,
+      )
+    : [];
+  const parts = [
+    text ? `text="${text}"` : "text=<empty>",
+    typeof record.mediaUrl === "string" && record.mediaUrl.trim().length > 0
+      ? `mediaUrl=${record.mediaUrl.trim()}`
+      : undefined,
+    mediaUrls.length > 0 ? `mediaUrls=${mediaUrls.length}` : undefined,
+    typeof record.replyToId === "string" && record.replyToId.trim().length > 0
+      ? `replyToId=${record.replyToId.trim()}`
+      : undefined,
+    record.audioAsVoice === true ? "audioAsVoice=true" : undefined,
+  ].filter((part): part is string => Boolean(part));
+  return parts.join(", ");
+}
+
+function normalizeBotmaxLogPreview(value: string | undefined): string | undefined {
+  const trimmed = value?.replace(/\s+/g, " ").trim();
+  return trimmed ? trimmed.slice(0, BOTMAX_REPLY_LOG_PREVIEW_MAX_CHARS) : undefined;
+}
+
+function summarizeTranscriptAssistantEntry(entry: unknown): Record<string, unknown> | null {
+  if (!entry || typeof entry !== "object") {
+    return null;
+  }
+  const record = entry as {
+    type?: unknown;
+    timestamp?: unknown;
+    message?: {
+      role?: unknown;
+      provider?: unknown;
+      model?: unknown;
+      stopReason?: unknown;
+      errorMessage?: unknown;
+      content?: Array<{ type?: unknown; text?: unknown }>;
+    };
+  };
+  if (record.type !== "message" || record.message?.role !== "assistant") {
+    return null;
+  }
+
+  const textPart = Array.isArray(record.message.content)
+    ? record.message.content.find(
+        (part): part is { type: "text"; text: string } =>
+          part?.type === "text" && typeof part.text === "string",
+      )
+    : undefined;
+
+  return {
+    timestamp: typeof record.timestamp === "string" ? record.timestamp : undefined,
+    provider: typeof record.message.provider === "string" ? record.message.provider : undefined,
+    model: typeof record.message.model === "string" ? record.message.model : undefined,
+    stopReason:
+      typeof record.message.stopReason === "string" ? record.message.stopReason : undefined,
+    errorMessage:
+      typeof record.message.errorMessage === "string" ? record.message.errorMessage : undefined,
+    textPreview: normalizeBotmaxLogPreview(textPart?.text),
+  };
+}
+
+async function inspectBotmaxSessionTranscript(params: {
+  storePath: string;
+  sessionKey: string;
+}): Promise<string | undefined> {
+  try {
+    const rawStore = await readFile(params.storePath, "utf8");
+    const parsedStore = JSON.parse(rawStore) as Record<string, unknown>;
+    const entry = parsedStore[params.sessionKey.trim().toLowerCase()];
+    if (!entry || typeof entry !== "object") {
+      return undefined;
+    }
+
+    const sessionFileRaw =
+      typeof (entry as { sessionFile?: unknown }).sessionFile === "string"
+        ? (entry as { sessionFile?: string }).sessionFile?.trim()
+        : undefined;
+    if (!sessionFileRaw) {
+      return undefined;
+    }
+
+    const sessionFile = path.isAbsolute(sessionFileRaw)
+      ? sessionFileRaw
+      : path.resolve(path.dirname(params.storePath), sessionFileRaw);
+    const rawTranscript = await readFile(sessionFile, "utf8");
+    const lines = rawTranscript.split(/\r?\n/).filter((line) => line.trim().length > 0);
+    const assistantEntries: Record<string, unknown>[] = [];
+
+    for (let index = lines.length - 1; index >= 0; index -= 1) {
+      try {
+        const parsedLine = JSON.parse(lines[index] ?? "") as unknown;
+        const summary = summarizeTranscriptAssistantEntry(parsedLine);
+        if (summary) {
+          assistantEntries.push(summary);
+          if (assistantEntries.length >= 2) {
+            break;
+          }
+        }
+      } catch {
+        // Ignore malformed transcript lines during diagnostics.
+      }
+    }
+
+    return JSON.stringify({
+      sessionFile,
+      assistantTail: assistantEntries,
+    });
+  } catch (error) {
+    return JSON.stringify({
+      diagnosticError: String(error),
+    });
+  }
+}
+
 export async function handleBotmaxInbound(params: {
   senderId: string;
   senderName?: string;
   senderUsername?: string;
   accountId?: string;
+  agentId?: string;
   body: string;
   chatType: "direct" | "group" | "channel";
   chatId?: string;
@@ -54,6 +214,7 @@ export async function handleBotmaxInbound(params: {
     senderName,
     senderUsername,
     accountId,
+    agentId,
     body,
     chatType,
     chatId,
@@ -105,15 +266,34 @@ export async function handleBotmaxInbound(params: {
 
   statusSink?.({ lastInboundAt: Date.now() });
 
-  const route = core.channel.routing.resolveAgentRoute({
-    cfg: config,
-    channel: "botmax",
-    accountId: routingAccountId,
-    peer: {
-      kind: isGroupConversation ? "group" : "direct",
-      id: routePeerId,
-    },
-  });
+  const normalizedExplicitAgentId = agentId?.trim() ? normalizeBotmaxAgentId(agentId) : undefined;
+  const route = normalizedExplicitAgentId
+    ? {
+        agentId: normalizedExplicitAgentId,
+        accountId: routingAccountId,
+        sessionKey: core.channel.routing
+          .buildAgentSessionKey({
+            agentId: normalizedExplicitAgentId,
+            channel: "botmax",
+            accountId: routingAccountId,
+            peer: {
+              kind: isGroupConversation ? "group" : "direct",
+              id: routePeerId,
+            },
+            dmScope: config.session?.dmScope,
+            identityLinks: config.session?.identityLinks,
+          })
+          .toLowerCase(),
+      }
+    : core.channel.routing.resolveAgentRoute({
+        cfg: config,
+        channel: "botmax",
+        accountId: routingAccountId,
+        peer: {
+          kind: isGroupConversation ? "group" : "direct",
+          id: routePeerId,
+        },
+      });
 
   const storePath = core.channel.session.resolveStorePath(config.session?.store, {
     agentId: route.agentId,
@@ -197,6 +377,13 @@ export async function handleBotmaxInbound(params: {
   });
 
   let outboundDelivered = 0;
+  const skippedReplies: string[] = [];
+  let dispatchResult:
+    | {
+        queuedFinal: boolean;
+        counts: Record<"tool" | "block" | "final", number>;
+      }
+    | undefined;
 
   const deliver = async (payload: unknown) => {
     const replyToId = resolveReplyToIdFromPayload(payload);
@@ -232,6 +419,9 @@ export async function handleBotmaxInbound(params: {
     }
     const textToSend = renderedText ?? "";
     if (!textToSend.trim()) {
+      runtime.log?.(
+        `botmax[${account.accountId}] deliver skipped after render: agent=${route.agentId} sender=${senderId} summary=${buildBotmaxReplyPayloadSummary(payload)}`,
+      );
       return;
     }
     const limit = account.textChunkLimit;
@@ -257,7 +447,7 @@ export async function handleBotmaxInbound(params: {
 
   const releaseHeartbeat = suspendBotmaxHeartbeat(account.accountId);
   try {
-    await core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
+    dispatchResult = await core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
       ctx: ctxPayload,
       cfg: config,
       dispatcherOptions: {
@@ -265,6 +455,15 @@ export async function handleBotmaxInbound(params: {
         deliver,
         onError: (err, info) => {
           runtime.error?.(`botmax ${info.kind} reply failed: ${String(err)}`);
+        },
+        onSkip: (payload, info) => {
+          const message = `kind=${info.kind} reason=${info.reason} summary=${buildBotmaxReplyPayloadSummary(payload)}`;
+          if (skippedReplies.length < 5) {
+            skippedReplies.push(message);
+          }
+          runtime.log?.(
+            `botmax[${account.accountId}] skipped reply: agent=${route.agentId} sender=${senderId} ${message}`,
+          );
         },
       },
       replyOptions: {
@@ -274,8 +473,15 @@ export async function handleBotmaxInbound(params: {
   } finally {
     try {
       if (outboundDelivered === 0) {
+        const sessionTranscript =
+          skippedReplies.length === 0
+            ? await inspectBotmaxSessionTranscript({
+                storePath,
+                sessionKey: ctxPayload.SessionKey ?? route.sessionKey,
+              })
+            : undefined;
         runtime.log?.(
-          `botmax[${account.accountId}] no outbound reply for sender ${senderId} (target=${replyTargetId})`,
+          `botmax[${account.accountId}] no outbound reply for sender ${senderId} (target=${replyTargetId}, agent=${route.agentId}, queuedFinal=${dispatchResult?.queuedFinal ?? false}, counts=${JSON.stringify(dispatchResult?.counts ?? { tool: 0, block: 0, final: 0 })}, skipped=${JSON.stringify(skippedReplies)}${sessionTranscript ? `, transcript=${sessionTranscript}` : ""})`,
         );
       }
     } finally {

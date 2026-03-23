@@ -1,14 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  buildMediaPayload,
-  buildRandomTempFilePath,
-  loadOutboundMediaFromUrl,
-  resolveOutboundMediaUrls,
-  resolvePreferredOpenClawTmpDir,
-  type PluginRuntime,
-} from "openclaw/plugin-sdk";
 import type {
   BotmaxAttachment,
   BotmaxAttachmentKind,
@@ -16,6 +8,14 @@ import type {
   BotmaxInboundAttachment,
   BotmaxOutboundAttachmentInput,
 } from "./message-format.js";
+import {
+  buildMediaPayload,
+  buildRandomTempFilePath,
+  loadOutboundMediaFromUrl,
+  resolveOutboundMediaUrls,
+  resolvePreferredOpenClawTmpDir,
+  type PluginRuntime,
+} from "./runtime-api.js";
 
 const BOTMAX_INLINE_ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024;
 const BOTMAX_INBOUND_TMP_DIR = path.join(resolvePreferredOpenClawTmpDir(), "botmax-inbound");

@@ -8,6 +8,7 @@ const {
   suspendBotmaxHeartbeatMock,
   materializeInboundAttachmentsMock,
   buildOutboundAttachmentsFromReplyMock,
+  readFileMock,
 } = vi.hoisted(() => {
   const releaseHeartbeatMock = vi.fn();
   return {
@@ -17,10 +18,15 @@ const {
     suspendBotmaxHeartbeatMock: vi.fn(() => releaseHeartbeatMock),
     materializeInboundAttachmentsMock: vi.fn(),
     buildOutboundAttachmentsFromReplyMock: vi.fn(),
+    readFileMock: vi.fn(),
   };
 });
 
-vi.mock("openclaw/plugin-sdk", () => ({
+vi.mock("node:fs/promises", () => ({
+  readFile: readFileMock,
+}));
+
+vi.mock("./runtime-api.js", () => ({
   chunkTextForOutbound: vi.fn((text: string) => [text]),
   createReplyPrefixOptions: vi.fn(() => ({ onModelSelected: undefined })),
 }));
@@ -49,6 +55,7 @@ beforeEach(() => {
     mediaPayload: {},
     transcript: undefined,
   });
+  readFileMock.mockReset();
   buildOutboundAttachmentsFromReplyMock.mockImplementation(async (params: { payload: unknown }) => {
     const payload =
       params.payload && typeof params.payload === "object"
@@ -145,6 +152,257 @@ describe("botmax inbound replies", () => {
     expect(runtime.log).not.toHaveBeenCalledWith(expect.stringContaining("<<<done>>>"));
     expect(suspendBotmaxHeartbeatMock).toHaveBeenCalledWith("default");
     expect(releaseHeartbeatMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("prefers explicit inbound agentId routing over config bindings", async () => {
+    const buildAgentSessionKey = vi.fn(() => "agent:research:main");
+    const resolveAgentRoute = vi.fn(() => ({
+      agentId: "agent-1",
+      sessionKey: "session-1",
+      accountId: "default",
+    }));
+
+    setBotmaxRuntime({
+      channel: {
+        routing: {
+          buildAgentSessionKey,
+          resolveAgentRoute,
+        },
+        session: {
+          resolveStorePath: vi.fn(() => "/tmp/store"),
+          readSessionUpdatedAt: vi.fn(() => undefined),
+          recordInboundSession: vi.fn(async () => {}),
+        },
+        reply: {
+          resolveEnvelopeFormatOptions: vi.fn(() => ({})),
+          formatAgentEnvelope: vi.fn(() => "envelope"),
+          finalizeInboundContext: vi.fn((ctx) => ctx),
+          dispatchReplyWithBufferedBlockDispatcher: vi.fn(async ({ dispatcherOptions }) => {
+            await dispatcherOptions.deliver({ text: "reply text" });
+          }),
+        },
+        text: {
+          resolveMarkdownTableMode: vi.fn(() => "plain"),
+          convertMarkdownTables: vi.fn((text) => text),
+        },
+      },
+    } as never);
+
+    await handleBotmaxInbound({
+      senderId: "email:alice@example.com",
+      senderName: "Alice",
+      agentId: "Research",
+      body: "hello",
+      chatType: "direct",
+      replyTargetId: "email:reply-target",
+      account: {
+        accountId: "default",
+        enabled: true,
+        server: "wss://botmax.example/ws",
+        textChunkLimit: 2000,
+      },
+      config: {},
+      runtime: {
+        error: vi.fn(),
+        log: vi.fn(),
+        exit: vi.fn(),
+      },
+    });
+
+    expect(buildAgentSessionKey).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: "research",
+        channel: "botmax",
+        accountId: "default",
+        peer: {
+          kind: "direct",
+          id: "email:alice@example.com",
+        },
+      }),
+    );
+    expect(resolveAgentRoute).not.toHaveBeenCalled();
+  });
+
+  it("logs skip diagnostics when dispatch completes without an outbound reply", async () => {
+    const runtime = {
+      error: vi.fn(),
+      log: vi.fn(),
+      exit: vi.fn(),
+    };
+
+    setBotmaxRuntime({
+      channel: {
+        routing: {
+          resolveAgentRoute: vi.fn(() => ({
+            agentId: "agent-1",
+            sessionKey: "session-1",
+            accountId: "default",
+          })),
+        },
+        session: {
+          resolveStorePath: vi.fn(() => "/tmp/store"),
+          readSessionUpdatedAt: vi.fn(() => undefined),
+          recordInboundSession: vi.fn(async () => {}),
+        },
+        reply: {
+          resolveEnvelopeFormatOptions: vi.fn(() => ({})),
+          formatAgentEnvelope: vi.fn(() => "envelope"),
+          finalizeInboundContext: vi.fn((ctx) => ctx),
+          dispatchReplyWithBufferedBlockDispatcher: vi.fn(async ({ dispatcherOptions }) => {
+            dispatcherOptions.onSkip?.(
+              { text: "[[reply_to_current]] Yep - got your test." },
+              {
+                kind: "final",
+                reason: "empty",
+              },
+            );
+            return {
+              queuedFinal: false,
+              counts: { tool: 0, block: 0, final: 0 },
+            };
+          }),
+        },
+        text: {
+          resolveMarkdownTableMode: vi.fn(() => "plain"),
+          convertMarkdownTables: vi.fn((text) => text),
+        },
+      },
+    } as never);
+
+    readFileMock
+      .mockResolvedValueOnce(
+        JSON.stringify({
+          "session-1": {
+            sessionFile: "/tmp/session.jsonl",
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        [
+          JSON.stringify({
+            type: "message",
+            timestamp: "2026-03-23T02:43:34.538Z",
+            message: {
+              role: "assistant",
+              provider: "OpenAI",
+              model: "openai/gpt-5.4",
+              stopReason: "stop",
+              content: [{ type: "text", text: "[[reply_to_current]] Received." }],
+            },
+          }),
+        ].join("\n"),
+      );
+
+    await handleBotmaxInbound({
+      senderId: "email:alice@example.com",
+      senderName: "Alice",
+      body: "test",
+      chatType: "direct",
+      replyTargetId: "email-msg:reply-target|binding:test",
+      account: {
+        accountId: "default",
+        enabled: true,
+        server: "wss://botmax.example/ws",
+        textChunkLimit: 2000,
+      },
+      config: {},
+      runtime,
+    });
+
+    expect(sendBotmaxTextMock).not.toHaveBeenCalled();
+    expect(runtime.log).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "skipped reply: agent=agent-1 sender=email:alice@example.com kind=final reason=empty",
+      ),
+    );
+    expect(runtime.log).toHaveBeenCalledWith(
+      expect.stringContaining("no outbound reply for sender email:alice@example.com"),
+    );
+    expect(runtime.log).toHaveBeenCalledWith(expect.stringContaining("queuedFinal=false"));
+    expect(runtime.log).toHaveBeenCalledWith(expect.stringContaining('"final":0'));
+  });
+
+  it("logs transcript diagnostics when no reply is queued and nothing was skipped", async () => {
+    const runtime = {
+      error: vi.fn(),
+      log: vi.fn(),
+      exit: vi.fn(),
+    };
+
+    setBotmaxRuntime({
+      channel: {
+        routing: {
+          resolveAgentRoute: vi.fn(() => ({
+            agentId: "research",
+            sessionKey: "agent:research:main",
+            accountId: "default",
+          })),
+        },
+        session: {
+          resolveStorePath: vi.fn(() => "/tmp/store"),
+          readSessionUpdatedAt: vi.fn(() => undefined),
+          recordInboundSession: vi.fn(async () => {}),
+        },
+        reply: {
+          resolveEnvelopeFormatOptions: vi.fn(() => ({})),
+          formatAgentEnvelope: vi.fn(() => "envelope"),
+          finalizeInboundContext: vi.fn((ctx) => ctx),
+          dispatchReplyWithBufferedBlockDispatcher: vi.fn(async () => ({
+            queuedFinal: false,
+            counts: { tool: 0, block: 0, final: 0 },
+          })),
+        },
+        text: {
+          resolveMarkdownTableMode: vi.fn(() => "plain"),
+          convertMarkdownTables: vi.fn((text) => text),
+        },
+      },
+    } as never);
+
+    readFileMock
+      .mockResolvedValueOnce(
+        JSON.stringify({
+          "agent:research:main": {
+            sessionFile: "/tmp/session.jsonl",
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        [
+          JSON.stringify({
+            type: "message",
+            timestamp: "2026-03-23T02:43:34.538Z",
+            message: {
+              role: "assistant",
+              provider: "OpenAI",
+              model: "openai/gpt-5.4",
+              stopReason: "stop",
+              content: [{ type: "text", text: "[[reply_to_current]] Received." }],
+            },
+          }),
+        ].join("\n"),
+      );
+
+    await handleBotmaxInbound({
+      senderId: "email:alice@example.com",
+      senderName: "Alice",
+      body: "test",
+      chatType: "direct",
+      replyTargetId: "email-msg:reply-target|binding:test",
+      account: {
+        accountId: "default",
+        enabled: true,
+        server: "wss://botmax.example/ws",
+        textChunkLimit: 2000,
+      },
+      config: {},
+      runtime,
+    });
+
+    expect(runtime.log).toHaveBeenCalledWith(expect.stringContaining('"assistantTail":[{'));
+    expect(runtime.log).toHaveBeenCalledWith(
+      expect.stringContaining('"textPreview":"[[reply_to_current]] Received."'),
+    );
   });
 
   it("materializes inbound attachments and sends attachment replies through botmax frames", async () => {

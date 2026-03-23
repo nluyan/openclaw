@@ -31,6 +31,7 @@ describe("botmax message format", () => {
           nativeId: "123",
           kind: "direct",
           replyTargetId: "telegram:123",
+          agentId: "main",
         },
         sender: {
           id: "telegram:123",
@@ -64,6 +65,7 @@ describe("botmax message format", () => {
       senderName: "Alice",
       senderUsername: "alice_demo",
       accountId: "00000000-0000-0000-0000-000000000001",
+      agentId: "main",
       provider: "telegram",
       surface: "telegram",
       botUsername: "demo_bot",
@@ -111,6 +113,7 @@ describe("botmax message format", () => {
           nativeId: "123",
           kind: "direct",
           replyTargetId: "telegram:123",
+          agentId: "research",
         },
         sender: {
           id: "telegram:123",
@@ -134,6 +137,7 @@ describe("botmax message format", () => {
       senderName: "Alice",
       senderUsername: undefined,
       accountId: "00000000-0000-0000-0000-000000000002",
+      agentId: "research",
       provider: "telegram",
       surface: "telegram",
       botUsername: undefined,

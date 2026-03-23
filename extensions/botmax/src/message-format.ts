@@ -49,6 +49,7 @@ type BotmaxConversationContext = {
   nativeId?: string;
   kind: BotmaxChatType;
   replyTargetId: string;
+  agentId?: string;
   title?: string;
   channelName?: string;
   spaceName?: string;
@@ -255,6 +256,7 @@ type BotmaxInboundBase = {
   senderName: string;
   senderUsername?: string;
   accountId?: string;
+  agentId?: string;
   provider: string;
   surface: string;
   botUsername?: string;
@@ -741,8 +743,9 @@ function parseConversationContext(value: unknown): BotmaxConversationContext | n
   return {
     id,
     nativeId: normalizeNonEmptyString(value.nativeId),
-    kind: normalizeChatType(value.kind),
     replyTargetId,
+    kind: normalizeChatType(value.kind),
+    agentId: normalizeNonEmptyString(value.agentId),
     title: normalizeNonEmptyString(value.title),
     channelName: normalizeNonEmptyString(value.channelName),
     spaceName: normalizeNonEmptyString(value.spaceName),
@@ -853,6 +856,7 @@ function buildInboundBase(params: {
     senderName,
     senderUsername: params.sender.username,
     accountId: params.origin.accountId,
+    ...(params.conversation.agentId ? { agentId: params.conversation.agentId } : {}),
     provider: params.origin.platform,
     surface: params.origin.surface?.trim() || params.origin.platform,
     botUsername: params.origin.botUsername,

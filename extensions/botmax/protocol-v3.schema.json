@@ -105,6 +105,9 @@
         "replyTargetId": {
           "$ref": "#/$defs/nonEmptyString"
         },
+        "agentId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
         "title": {
           "$ref": "#/$defs/nonEmptyString"
         },

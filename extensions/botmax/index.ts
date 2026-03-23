@@ -1,6 +1,6 @@
-import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
-import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
 import { botmaxPlugin } from "./src/channel.js";
+import type { OpenClawPluginApi } from "./src/runtime-api.js";
+import { emptyPluginConfigSchema } from "./src/runtime-api.js";
 import { setBotmaxRuntime } from "./src/runtime.js";
 
 const plugin = {

@@ -1,4 +1,3 @@
-import type { OpenClawConfig, RuntimeEnv } from "openclaw/plugin-sdk";
 import WebSocket from "ws";
 import { executeBotmaxGatewayCommand } from "./command-exec.js";
 import {
@@ -14,6 +13,7 @@ import {
 import { BotmaxFileOperationError, readBotmaxFile, writeBotmaxFile } from "./file-ops.js";
 import { handleBotmaxInbound } from "./inbound.js";
 import { parseBotmaxInboundText } from "./message-format.js";
+import type { OpenClawConfig, RuntimeEnv } from "./runtime-api.js";
 import type { ResolvedBotmaxAccount } from "./types.js";
 
 export type BotmaxMonitorOptions = {
@@ -193,6 +193,7 @@ export function monitorBotmaxAccount(options: BotmaxMonitorOptions): { stop: () 
               senderName: inbound.senderName,
               senderUsername: inbound.senderUsername,
               accountId: inbound.accountId,
+              agentId: inbound.agentId,
               body: inbound.body,
               chatType: inbound.chatType,
               chatId: inbound.chatId,

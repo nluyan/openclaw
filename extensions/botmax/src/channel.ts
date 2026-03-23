@@ -1,14 +1,3 @@
-import type { ChannelAccountSnapshot, ChannelPlugin } from "openclaw/plugin-sdk";
-import {
-  buildBaseChannelStatusSummary,
-  buildChannelConfigSchema,
-  chunkTextForOutbound,
-  collectStatusIssuesFromLastError,
-  createDefaultChannelRuntimeState,
-  DEFAULT_ACCOUNT_ID,
-  deleteAccountFromConfigSection,
-  setAccountEnabledInConfigSection,
-} from "openclaw/plugin-sdk";
 import {
   isAccountConfigured,
   listAccountIds,
@@ -19,6 +8,17 @@ import { buildOutboundAttachmentsFromReply } from "./attachments.js";
 import { BotmaxConfigSchema } from "./config-schema.js";
 import { sendBotmaxMessage, sendBotmaxText, suspendBotmaxHeartbeat } from "./connection.js";
 import { monitorBotmaxAccount } from "./monitor.js";
+import type { ChannelAccountSnapshot, ChannelPlugin } from "./runtime-api.js";
+import {
+  buildBaseChannelStatusSummary,
+  buildChannelConfigSchema,
+  chunkTextForOutbound,
+  collectStatusIssuesFromLastError,
+  createDefaultChannelRuntimeState,
+  DEFAULT_ACCOUNT_ID,
+  deleteAccountFromConfigSection,
+  setAccountEnabledInConfigSection,
+} from "./runtime-api.js";
 import { getBotmaxRuntime } from "./runtime.js";
 import type { ResolvedBotmaxAccount } from "./types.js";
 

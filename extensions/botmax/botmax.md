@@ -38,6 +38,7 @@
       "nativeId": "-1001234567890",
       "kind": "group",
       "replyTargetId": "telegram:-1001234567890",
+      "agentId": "main",
       "title": "Release Squad",
       "threadId": "77"
     },
@@ -97,7 +98,8 @@
       "id": "telegram:-1001234567890",
       "nativeId": "-1001234567890",
       "kind": "group",
-      "replyTargetId": "telegram:-1001234567890"
+      "replyTargetId": "telegram:-1001234567890",
+      "agentId": "main"
     },
     "sender": {
       "id": "telegram:123456",
@@ -147,7 +149,8 @@
     },
     "conversation": {
       "id": "telegram:123456",
-      "replyTargetId": "telegram:123456"
+      "replyTargetId": "telegram:123456",
+      "agentId": "main"
     },
     "command": {
       "text": "openclaw devices list",
@@ -255,6 +258,7 @@
 - BotKeeper consumes `chat.message`, `command.result`, and `file.result`.
 - `conversation.id` is the conversation identity for routing and session scoping.
 - `conversation.replyTargetId` is the concrete delivery target for replies and command results.
+- `conversation.agentId` is an optional trusted ingress routing hint. When present, the Botmax plugin routes directly to that OpenClaw agent without requiring a matching `bindings` entry in `openclaw.json`.
 - `sender.id` is the actual sender identity and is separate from the conversation id.
 - `origin.platform` is forwarded into OpenClaw as the real upstream provider instead of collapsing everything to `botmax`.
 - `sender.displayName` and `sender.username` are forwarded so OpenClaw can populate `SenderName` and `SenderUsername`.
