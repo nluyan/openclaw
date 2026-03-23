@@ -247,6 +247,43 @@ export const GENERATED_BUNDLED_PLUGIN_METADATA = [
     },
   },
   {
+    dirName: "botmax",
+    idHint: "botmax",
+    source: {
+      source: "./index.ts",
+      built: "index.js",
+    },
+    packageName: "@openclaw/botmax",
+    packageVersion: "2026.2.26",
+    packageDescription: "OpenClaw Botmax channel plugin",
+    packageManifest: {
+      extensions: ["./index.ts"],
+      channel: {
+        id: "botmax",
+        label: "Botmax",
+        selectionLabel: "Botmax (WebSocket)",
+        docsPath: "/channels/botmax",
+        docsLabel: "botmax",
+        blurb: "WebSocket bridge for Botmax",
+        order: 95,
+      },
+      install: {
+        npmSpec: "@openclaw/botmax",
+        localPath: "extensions/botmax",
+        defaultChoice: "npm",
+      },
+    },
+    manifest: {
+      id: "botmax",
+      configSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {},
+      },
+      channels: ["botmax"],
+    },
+  },
+  {
     dirName: "brave",
     idHint: "brave-plugin",
     source: {

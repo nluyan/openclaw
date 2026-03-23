@@ -259,6 +259,7 @@
 - `conversation.id` is the conversation identity for routing and session scoping.
 - `conversation.replyTargetId` is the concrete delivery target for replies and command results.
 - `conversation.agentId` is an optional trusted ingress routing hint. When present, the Botmax plugin routes directly to that OpenClaw agent without requiring a matching `bindings` entry in `openclaw.json`.
+- `origin.accountId` is treated as a binding-scoped routing hint for session/agent resolution. Outbound Botmax sends still resolve against configured Botmax channel accounts and fall back to `default` (or the only configured account) when that hint does not match a configured Botmax account id.
 - `sender.id` is the actual sender identity and is separate from the conversation id.
 - `origin.platform` is forwarded into OpenClaw as the real upstream provider instead of collapsing everything to `botmax`.
 - `sender.displayName` and `sender.username` are forwarded so OpenClaw can populate `SenderName` and `SenderUsername`.

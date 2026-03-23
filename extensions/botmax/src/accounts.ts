@@ -15,6 +15,46 @@ function getChannelConfig(cfg: OpenClawConfig): BotmaxChannelConfig {
   return (cfg.channels?.botmax ?? {}) as BotmaxChannelConfig;
 }
 
+function hasOwnAccount(
+  accounts: Record<string, BotmaxChannelConfig["accounts"][string]> | undefined,
+  accountId: string,
+): boolean {
+  if (!accounts) {
+    return false;
+  }
+  return Object.prototype.hasOwnProperty.call(accounts, accountId);
+}
+
+function resolveConfiguredAccountId(
+  channelConfig: BotmaxChannelConfig,
+  accountId?: string | null,
+): string {
+  const requestedAccountId = accountId?.trim();
+  if (!requestedAccountId) {
+    return DEFAULT_ACCOUNT_ID;
+  }
+
+  const accounts = channelConfig.accounts;
+  if (!accounts || Object.keys(accounts).length === 0) {
+    return DEFAULT_ACCOUNT_ID;
+  }
+
+  if (hasOwnAccount(accounts, requestedAccountId)) {
+    return requestedAccountId;
+  }
+
+  if (hasOwnAccount(accounts, DEFAULT_ACCOUNT_ID)) {
+    return DEFAULT_ACCOUNT_ID;
+  }
+
+  const configuredAccountIds = Object.keys(accounts);
+  if (configuredAccountIds.length === 1) {
+    return configuredAccountIds[0] ?? requestedAccountId;
+  }
+
+  return requestedAccountId;
+}
+
 export function listAccountIds(cfg: OpenClawConfig): string[] {
   const accounts = getChannelConfig(cfg).accounts;
   if (accounts && Object.keys(accounts).length > 0) {
@@ -27,8 +67,8 @@ export function resolveAccount(
   cfg: OpenClawConfig,
   accountId?: string | null,
 ): ResolvedBotmaxAccount {
-  const resolvedAccountId = accountId?.trim() || DEFAULT_ACCOUNT_ID;
   const channelConfig = getChannelConfig(cfg);
+  const resolvedAccountId = resolveConfiguredAccountId(channelConfig, accountId);
   const accountOverride = channelConfig.accounts?.[resolvedAccountId] ?? {};
 
   const envServer = process.env.BOTMAX_SERVER;

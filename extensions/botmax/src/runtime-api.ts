@@ -14,15 +14,11 @@ export { resolvePreferredOpenClawTmpDir } from "openclaw/plugin-sdk/infra-runtim
 export { buildRandomTempFilePath } from "openclaw/plugin-sdk/temp-path";
 export { resolveOutboundMediaUrls } from "openclaw/plugin-sdk/reply-payload";
 export { loadOutboundMediaFromUrl } from "openclaw/plugin-sdk/msteams";
+export { runPluginCommandWithTimeout } from "openclaw/plugin-sdk/sandbox";
 export {
   buildBaseChannelStatusSummary,
   collectStatusIssuesFromLastError,
   createDefaultChannelRuntimeState,
 } from "openclaw/plugin-sdk/signal";
 export { chunkTextForOutbound } from "openclaw/plugin-sdk/zalouser";
-export {
-  approveDevicePairing,
-  listDevicePairing,
-  rejectDevicePairing,
-  runPluginCommandWithTimeout,
-} from "openclaw/plugin-sdk/device-pair";
+export { approveDevicePairing, listDevicePairing } from "openclaw/plugin-sdk/device-bootstrap";

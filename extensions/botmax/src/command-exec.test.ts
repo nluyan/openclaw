@@ -3,7 +3,6 @@ import { executeBotmaxGatewayCommand } from "./command-exec.js";
 
 const listDevicePairingMock = vi.fn();
 const approveDevicePairingMock = vi.fn();
-const rejectDevicePairingMock = vi.fn();
 const runPluginCommandWithTimeoutMock = vi.fn();
 const removePairedDeviceLocallyMock = vi.fn();
 const clearDevicePairingLocallyMock = vi.fn();
@@ -17,7 +16,6 @@ const renamePairedNodeLocallyMock = vi.fn();
 vi.mock("./runtime-api.js", () => ({
   listDevicePairing: (...args: unknown[]) => listDevicePairingMock(...args),
   approveDevicePairing: (...args: unknown[]) => approveDevicePairingMock(...args),
-  rejectDevicePairing: (...args: unknown[]) => rejectDevicePairingMock(...args),
   runPluginCommandWithTimeout: (...args: unknown[]) => runPluginCommandWithTimeoutMock(...args),
 }));
 
@@ -35,7 +33,6 @@ vi.mock("./local-state-commands.js", () => ({
 function resetAllMocks() {
   listDevicePairingMock.mockReset();
   approveDevicePairingMock.mockReset();
-  rejectDevicePairingMock.mockReset();
   runPluginCommandWithTimeoutMock.mockReset();
   removePairedDeviceLocallyMock.mockReset();
   clearDevicePairingLocallyMock.mockReset();
@@ -83,19 +80,25 @@ describe("botmax command execution", () => {
     expect(result.method).toBe("device.pair.approve");
   });
 
-  it("maps devices reject to local state store", async () => {
+  it("maps devices reject to forwarded command execution", async () => {
     resetAllMocks();
-    rejectDevicePairingMock.mockResolvedValueOnce({
-      requestId: "req-002",
-      deviceId: "dev-002",
+    runPluginCommandWithTimeoutMock.mockResolvedValueOnce({
+      code: 0,
+      stdout: JSON.stringify({
+        requestId: "req-002",
+        deviceId: "dev-002",
+      }),
+      stderr: "",
     });
 
     const result = await executeBotmaxGatewayCommand({
       command: "openclaw devices reject req-002 --json",
     });
 
-    expect(rejectDevicePairingMock).toHaveBeenCalledWith("req-002");
-    expect(runPluginCommandWithTimeoutMock).not.toHaveBeenCalled();
+    expect(runPluginCommandWithTimeoutMock).toHaveBeenCalledWith({
+      argv: ["openclaw", "devices", "reject", "req-002", "--json"],
+      timeoutMs: 30000,
+    });
     expect(result.ok).toBe(true);
     expect(result.method).toBe("device.pair.reject");
   });

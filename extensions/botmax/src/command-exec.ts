@@ -11,7 +11,6 @@ import {
 import {
   approveDevicePairing,
   listDevicePairing,
-  rejectDevicePairing,
   runPluginCommandWithTimeout,
 } from "./runtime-api.js";
 
@@ -743,11 +742,10 @@ export async function executeBotmaxGatewayCommand(params: {
       }
       data = approved;
     } else if (mapped.kind === "devices.reject") {
-      const rejected = await rejectDevicePairing(mapped.requestId);
-      if (!rejected) {
-        throw new Error(`pairing request not found: ${mapped.requestId}`);
-      }
-      data = rejected;
+      data = await executeForwardedCommand(
+        ["openclaw", "devices", "reject", mapped.requestId, "--json"],
+        params.timeoutMs,
+      );
     } else if (mapped.kind === "devices.remove") {
       const removed = await removePairedDeviceLocally(mapped.deviceId);
       if (!removed) {
