@@ -129,6 +129,8 @@
 }
 ```
 
+BotKeeper may still send trusted operational commands such as `openclaw gateway restart` through `command.exec`, but the Botmax plugin should handle that restart request in-process by emitting `SIGUSR1` to the running gateway instead of spawning the CLI.
+
 ### Command Result Frame
 
 ```json

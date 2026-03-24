@@ -74,6 +74,12 @@ type CommandMapping =
       displayName: string;
     }
   | {
+      kind: "gateway.restart";
+      method: "gateway.restart";
+      delayMs?: number;
+      reason?: string;
+    }
+  | {
       kind: "command.forward";
       argv: string[];
     };
@@ -184,6 +190,14 @@ function parseBooleanFlag(value: string | undefined): boolean | undefined {
     return false;
   }
   return undefined;
+}
+
+function parseNonNegativeInteger(value: string, flagName: string): number {
+  const normalized = value.trim();
+  if (!/^\d+$/.test(normalized)) {
+    throw new Error(`${flagName} requires a non-negative integer`);
+  }
+  return Number.parseInt(normalized, 10);
 }
 
 function readOptionValue(tokens: string[], index: number): { value?: string; nextIndex: number } {
@@ -595,6 +609,38 @@ function tryMapNodesRename(tokens: string[]): CommandMapping | null {
   };
 }
 
+function tryMapGatewayRestart(tokens: string[]): CommandMapping | null {
+  let delayMs: number | undefined;
+  let reason: string | undefined;
+
+  for (let index = 3; index < tokens.length; index += 1) {
+    const token = tokens[index] ?? "";
+    if (!token || isJsonFlag(token)) {
+      continue;
+    }
+    if (token.startsWith("--delay-ms")) {
+      const resolved = readRequiredLongOption(tokens, index, "--delay-ms");
+      delayMs = parseNonNegativeInteger(resolved.value, "--delay-ms");
+      index = resolved.nextIndex;
+      continue;
+    }
+    if (token.startsWith("--reason")) {
+      const resolved = readRequiredLongOption(tokens, index, "--reason");
+      reason = resolved.value.trim();
+      index = resolved.nextIndex;
+      continue;
+    }
+    return null;
+  }
+
+  return {
+    kind: "gateway.restart",
+    method: "gateway.restart",
+    delayMs,
+    reason,
+  };
+}
+
 function mapCommand(tokens: string[]): CommandMapping {
   if (tokens.length === 0) {
     throw new Error("command is empty");
@@ -608,6 +654,10 @@ function mapCommand(tokens: string[]): CommandMapping {
 
   if (namespace === "gateway" && action === "call") {
     throw new Error("openclaw gateway call is no longer supported; use a direct openclaw command");
+  }
+
+  if (namespace === "gateway" && action === "restart") {
+    return tryMapGatewayRestart(tokens) ?? { kind: "command.forward", argv: tokens };
   }
 
   if (namespace === "devices") {
@@ -694,6 +744,26 @@ async function executeForwardedCommand(
   }
 }
 
+function requestInProcessGatewayRestart(): {
+  ok: boolean;
+  pid: number;
+  signal: "SIGUSR1";
+  mode: "emit" | "signal";
+} {
+  const mode = process.listenerCount("SIGUSR1") > 0 ? "emit" : "signal";
+  if (mode === "emit") {
+    process.emit("SIGUSR1");
+  } else {
+    process.kill(process.pid, "SIGUSR1");
+  }
+  return {
+    ok: true,
+    pid: process.pid,
+    signal: "SIGUSR1",
+    mode,
+  };
+}
+
 export async function executeBotmaxGatewayCommand(params: {
   command: string;
   timeoutMs?: number;
@@ -729,6 +799,14 @@ export async function executeBotmaxGatewayCommand(params: {
 
     if (mapped.kind === "devices.list") {
       data = await listDevicePairing();
+    } else if (mapped.kind === "gateway.restart") {
+      data = requestInProcessGatewayRestart();
+      return {
+        ok: true,
+        method: mapped.method,
+        data,
+        output: "gateway restart signal emitted",
+      };
     } else if (mapped.kind === "devices.approve") {
       const requestId = mapped.latest
         ? (await listDevicePairing()).pending[0]?.requestId

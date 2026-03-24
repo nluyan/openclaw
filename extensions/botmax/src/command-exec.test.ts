@@ -274,6 +274,28 @@ describe("botmax command execution", () => {
     expect(result.method).toBeUndefined();
   });
 
+  it("maps gateway restart to the internal SIGUSR1 scheduler instead of shelling out", async () => {
+    resetAllMocks();
+    const listenerCountSpy = vi.spyOn(process, "listenerCount").mockReturnValue(1);
+    const emitSpy = vi.spyOn(process, "emit").mockReturnValue(true);
+
+    try {
+      const result = await executeBotmaxGatewayCommand({
+        command: "openclaw gateway restart",
+      });
+
+      expect(listenerCountSpy).toHaveBeenCalledWith("SIGUSR1");
+      expect(emitSpy).toHaveBeenCalledWith("SIGUSR1");
+      expect(runPluginCommandWithTimeoutMock).not.toHaveBeenCalled();
+      expect(result.ok).toBe(true);
+      expect(result.method).toBe("gateway.restart");
+      expect(result.output).toBe("gateway restart signal emitted");
+    } finally {
+      listenerCountSpy.mockRestore();
+      emitSpy.mockRestore();
+    }
+  });
+
   it("rejects legacy gateway call transport", async () => {
     resetAllMocks();
 
