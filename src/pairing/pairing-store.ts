@@ -44,6 +44,8 @@ export type PairingRequest = {
   meta?: Record<string, string>;
 };
 
+type PairingRequestMeta = Record<string, string>;
+
 type PairingStore = {
   version: 1;
   requests: PairingRequest[];
@@ -52,6 +54,7 @@ type PairingStore = {
 type AllowFromStore = {
   version: 1;
   allowFrom: string[];
+  senderMeta?: Record<string, PairingRequestMeta>;
 };
 
 function resolveCredentialsDir(env: NodeJS.ProcessEnv = process.env): string {
@@ -270,6 +273,49 @@ function normalizeAllowFromList(channel: PairingChannel, store: AllowFromStore):
   );
 }
 
+function normalizePairingRequestMeta(
+  meta: Record<string, unknown> | null | undefined,
+): PairingRequestMeta | undefined {
+  if (!meta || typeof meta !== "object" || Array.isArray(meta)) {
+    return undefined;
+  }
+
+  const normalizedEntries = Object.entries(meta)
+    .map(([key, value]) => [key.trim(), String(value ?? "").trim()] as const)
+    .filter(([key, value]) => Boolean(key) && Boolean(value));
+
+  if (normalizedEntries.length === 0) {
+    return undefined;
+  }
+
+  return Object.fromEntries(normalizedEntries);
+}
+
+function normalizeAllowFromSenderMetaMap(
+  store: AllowFromStore,
+  allowFrom: readonly string[],
+): Record<string, PairingRequestMeta> {
+  const source = store.senderMeta;
+  if (!source || typeof source !== "object" || Array.isArray(source)) {
+    return {};
+  }
+
+  const allowFromSet = new Set(allowFrom);
+  const entries = Object.entries(source)
+    .map(([senderIdentity, meta]) => {
+      const normalizedSenderIdentity = senderIdentity.trim();
+      const normalizedMeta = normalizePairingRequestMeta(meta);
+      if (!normalizedSenderIdentity || !allowFromSet.has(normalizedSenderIdentity) || !normalizedMeta) {
+        return null;
+      }
+
+      return [normalizedSenderIdentity, normalizedMeta] as const;
+    })
+    .filter((entry): entry is readonly [string, PairingRequestMeta] => Boolean(entry));
+
+  return Object.fromEntries(entries);
+}
+
 function normalizeAllowFromInput(channel: PairingChannel, entry: string | number): string {
   return normalizeAllowEntry(channel, normalizeId(entry));
 }
@@ -455,30 +501,48 @@ async function readAllowFromState(params: {
   channel: PairingChannel;
   entry: string | number;
   filePath: string;
-}): Promise<{ current: string[]; normalized: string | null }> {
+}): Promise<{ current: string[]; normalized: string | null; senderMeta: Record<string, PairingRequestMeta> }> {
   const { value } = await readJsonFile<AllowFromStore>(params.filePath, {
     version: 1,
     allowFrom: [],
   });
   const current = normalizeAllowFromList(params.channel, value);
   const normalized = normalizeAllowFromInput(params.channel, params.entry);
-  return { current, normalized: normalized || null };
+  const senderMeta = normalizeAllowFromSenderMetaMap(value, current);
+  return { current, normalized: normalized || null, senderMeta };
 }
 
-async function writeAllowFromState(filePath: string, allowFrom: string[]): Promise<void> {
-  await writeJsonFile(filePath, {
+async function writeAllowFromState(params: {
+  filePath: string;
+  allowFrom: string[];
+  senderMeta?: Record<string, PairingRequestMeta>;
+}): Promise<void> {
+  const payload: AllowFromStore = {
     version: 1,
-    allowFrom,
-  } satisfies AllowFromStore);
+    allowFrom: params.allowFrom,
+  };
+  const normalizedSenderMeta = normalizeAllowFromSenderMetaMap(
+    {
+      version: 1,
+      allowFrom: params.allowFrom,
+      senderMeta: params.senderMeta,
+    },
+    params.allowFrom,
+  );
+  if (Object.keys(normalizedSenderMeta).length > 0) {
+    payload.senderMeta = normalizedSenderMeta;
+  }
+
+  await writeJsonFile(params.filePath, payload);
   let stat: Awaited<ReturnType<typeof fs.promises.stat>> | null = null;
   try {
-    stat = await fs.promises.stat(filePath);
+    stat = await fs.promises.stat(params.filePath);
   } catch {}
-  setAllowFromReadCache(filePath, {
+  setAllowFromReadCache(params.filePath, {
     exists: true,
     mtimeMs: stat?.mtimeMs ?? null,
     size: stat?.size ?? null,
-    entries: allowFrom.slice(),
+    entries: params.allowFrom.slice(),
   });
 }
 
@@ -505,6 +569,7 @@ async function updateAllowFromStoreEntry(params: {
   entry: string | number;
   accountId?: string;
   env?: NodeJS.ProcessEnv;
+  meta?: Record<string, string | undefined | null>;
   apply: (current: string[], normalized: string) => string[] | null;
 }): Promise<{ changed: boolean; allowFrom: string[] }> {
   const env = params.env ?? process.env;
@@ -513,7 +578,7 @@ async function updateAllowFromStoreEntry(params: {
     filePath,
     { version: 1, allowFrom: [] } satisfies AllowFromStore,
     async () => {
-      const { current, normalized } = await readAllowFromState({
+      const { current, normalized, senderMeta } = await readAllowFromState({
         channel: params.channel,
         entry: params.entry,
         filePath,
@@ -525,7 +590,21 @@ async function updateAllowFromStoreEntry(params: {
       if (!next) {
         return { changed: false, allowFrom: current };
       }
-      await writeAllowFromState(filePath, next);
+      const nextSenderMeta = { ...senderMeta };
+      if (!next.includes(normalized)) {
+        delete nextSenderMeta[normalized];
+      } else {
+        const normalizedMeta = normalizePairingRequestMeta(params.meta);
+        if (normalizedMeta) {
+          nextSenderMeta[normalized] = normalizedMeta;
+        }
+      }
+
+      await writeAllowFromState({
+        filePath,
+        allowFrom: next,
+        senderMeta: nextSenderMeta,
+      });
       return { changed: true, allowFrom: next };
     },
   );
@@ -600,6 +679,7 @@ type AllowFromStoreEntryUpdateParams = {
   entry: string | number;
   accountId?: string;
   env?: NodeJS.ProcessEnv;
+  meta?: Record<string, string | undefined | null>;
 };
 
 type ChannelAllowFromStoreEntryMutation = (
@@ -617,6 +697,7 @@ async function updateChannelAllowFromStore(
     entry: params.entry,
     accountId: params.accountId,
     env: params.env,
+    meta: params.meta,
     apply: params.apply,
   });
 }
@@ -844,6 +925,7 @@ export async function approveChannelPairingCode(params: {
         channel: params.channel,
         entry: entry.id,
         accountId: params.accountId?.trim() || entryAccountId,
+        meta: entry.meta,
         env,
       });
       return { id: entry.id, entry };

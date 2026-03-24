@@ -290,8 +290,17 @@ describe("pairing store", () => {
   });
 
   it("approves pairing codes into account-scoped allowFrom via pairing metadata", async () => {
-    await withTempStateDir(async () => {
-      const created = await createTelegramPairingRequest("yy");
+    await withTempStateDir(async (stateDir) => {
+      const created = await upsertChannelPairingRequest({
+        channel: "telegram",
+        accountId: "yy",
+        id: "12345",
+        meta: {
+          displayName: "Ian Lu",
+          username: "ianlu",
+        },
+      });
+      expect(created.created).toBe(true);
 
       const approved = await approveChannelPairingCode({
         channel: "telegram",
@@ -300,6 +309,18 @@ describe("pairing store", () => {
       expect(approved?.id).toBe("12345");
 
       await expectAccountScopedEntryIsolated("12345");
+
+      const raw = await fs.readFile(resolveAllowFromFilePath(stateDir, "telegram", "yy"), "utf8");
+      const parsed = JSON.parse(raw) as {
+        allowFrom?: string[];
+        senderMeta?: Record<string, Record<string, string>>;
+      };
+      expect(parsed.allowFrom).toEqual(["12345"]);
+      expect(parsed.senderMeta?.["12345"]).toMatchObject({
+        displayName: "Ian Lu",
+        username: "ianlu",
+        accountId: "yy",
+      });
     });
   });
 
