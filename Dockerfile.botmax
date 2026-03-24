@@ -1,4 +1,4 @@
-FROM ghcr.io/openclaw/openclaw:2026.3.12
+FROM ghcr.io/openclaw/openclaw:2026.3.22
 
 # Bundle BotMax plugin into OpenClaw built-in extensions.
 # /app/extensions is in the image layer, so plugin files are not hidden
