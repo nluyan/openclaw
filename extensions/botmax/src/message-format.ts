@@ -8,6 +8,7 @@ const COMMAND_EXEC_TYPE = "command.exec";
 const COMMAND_RESULT_TYPE = "command.result";
 const FILE_READ_TYPE = "file.read";
 const FILE_WRITE_TYPE = "file.write";
+const FILE_DELETE_TYPE = "file.delete";
 const FILE_RESULT_TYPE = "file.result";
 const CHAT_TYPE_DIRECT = "direct";
 const CHAT_TYPE_GROUP = "group";
@@ -67,7 +68,7 @@ type BotmaxResultConversationContext = {
 };
 
 type BotmaxFileContext = {
-  operation: "read" | "write";
+  operation: "read" | "write" | "delete";
   path: string;
   encoding: BotmaxFileEncoding;
   content?: string;
@@ -303,6 +304,12 @@ export type BotmaxInboundMessage =
       encoding: BotmaxFileEncoding;
       content: string;
       ensureDirectory: boolean;
+    }
+  | {
+      kind: "file.delete";
+      requestId?: JsonRpcId;
+      path: string;
+      encoding: BotmaxFileEncoding;
     };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -823,7 +830,7 @@ function parseFileContext(value: unknown): BotmaxFileContext | null {
   if (!operation || !path || !encoding) {
     return null;
   }
-  if (operation !== "read" && operation !== "write") {
+  if (operation !== "read" && operation !== "write" && operation !== "delete") {
     return null;
   }
   const content = typeof value.content === "string" ? value.content : undefined;
@@ -995,6 +1002,19 @@ function parseJsonRpcMessage(trimmed: string): BotmaxInboundMessage | null {
       encoding: file.encoding,
       content: file.content,
       ensureDirectory: file.ensureDirectory ?? true,
+    };
+  }
+
+  if (type === FILE_DELETE_TYPE) {
+    const file = parseFileContext(params.file);
+    if (!file || file.operation !== "delete") {
+      return null;
+    }
+    return {
+      kind: "file.delete",
+      requestId,
+      path: file.path,
+      encoding: file.encoding,
     };
   }
 
@@ -1183,7 +1203,7 @@ export function formatBotmaxOutboundCommandResult(params: {
 }
 
 export function formatBotmaxOutboundFileResult(params: {
-  operation: "read" | "write";
+  operation: "read" | "write" | "delete";
   path: string;
   encoding: BotmaxFileEncoding;
   ok: boolean;

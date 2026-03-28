@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { BotmaxFileEncoding } from "./message-format.js";
 
@@ -10,6 +10,12 @@ export type BotmaxFileReadResult = {
 };
 
 export type BotmaxFileWriteResult = {
+  path: string;
+  encoding: BotmaxFileEncoding;
+  sizeBytes: number;
+};
+
+export type BotmaxFileDeleteResult = {
   path: string;
   encoding: BotmaxFileEncoding;
   sizeBytes: number;
@@ -77,6 +83,25 @@ export async function writeBotmaxFile(params: {
       path: normalizedPath,
       encoding,
       sizeBytes: buffer.byteLength,
+    };
+  } catch (error) {
+    throw mapFileOperationError(normalizedPath, error);
+  }
+}
+
+export async function deleteBotmaxFile(params: {
+  path: string;
+  encoding?: string;
+}): Promise<BotmaxFileDeleteResult> {
+  const normalizedPath = requirePath(params.path);
+  const encoding = normalizeBotmaxFileEncoding(params.encoding);
+
+  try {
+    await unlink(normalizedPath);
+    return {
+      path: normalizedPath,
+      encoding,
+      sizeBytes: 0,
     };
   } catch (error) {
     throw mapFileOperationError(normalizedPath, error);

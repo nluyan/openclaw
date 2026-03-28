@@ -10,7 +10,7 @@ import {
   rememberBotmaxSender,
   setActiveConnection,
 } from "./connection.js";
-import { BotmaxFileOperationError, readBotmaxFile, writeBotmaxFile } from "./file-ops.js";
+import { BotmaxFileOperationError, deleteBotmaxFile, readBotmaxFile, writeBotmaxFile } from "./file-ops.js";
 import { handleBotmaxInbound } from "./inbound.js";
 import { parseBotmaxInboundText } from "./message-format.js";
 import type { OpenClawConfig, RuntimeEnv } from "./runtime-api.js";
@@ -343,6 +343,39 @@ export function monitorBotmaxAccount(options: BotmaxMonitorOptions): { stop: () 
                   error: err,
                 });
               });
+            return;
+          }
+
+          if (inbound.kind === "file.delete") {
+            void deleteBotmaxFile({
+              path: inbound.path,
+              encoding: inbound.encoding,
+            })
+              .then(async (result) => {
+                await sendBotmaxFileResult({
+                  accountId: account.accountId,
+                  operation: "delete",
+                  path: result.path,
+                  encoding: result.encoding,
+                  ok: true,
+                  output: `deleted ${result.path}`,
+                  data: result,
+                  requestId: inbound.requestId,
+                  platform: "internal",
+                  surface: "internal",
+                });
+              })
+              .catch(async (err) => {
+                await sendBotmaxFileErrorResult({
+                  accountId: account.accountId,
+                  operation: "delete",
+                  path: inbound.path,
+                  encoding: inbound.encoding,
+                  requestId: inbound.requestId,
+                  runtime,
+                  error: err,
+                });
+              });
           }
         });
 
@@ -389,7 +422,7 @@ export function monitorBotmaxAccount(options: BotmaxMonitorOptions): { stop: () 
 
 async function sendBotmaxFileErrorResult(params: {
   accountId: string;
-  operation: "read" | "write";
+  operation: "read" | "write" | "delete";
   path: string;
   encoding: "utf8" | "base64";
   requestId?: string | number | null;

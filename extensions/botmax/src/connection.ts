@@ -225,7 +225,7 @@ export async function sendBotmaxCommandResult(params: {
 
 export async function sendBotmaxFileResult(params: {
   accountId: string;
-  operation: "read" | "write";
+  operation: "read" | "write" | "delete";
   path: string;
   encoding: BotmaxFileEncoding;
   ok: boolean;

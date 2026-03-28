@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { readBotmaxFile, writeBotmaxFile } from "./file-ops.js";
+import { deleteBotmaxFile, readBotmaxFile, writeBotmaxFile } from "./file-ops.js";
 
 const tempDirs: string[] = [];
 
@@ -105,6 +105,26 @@ describe("botmax file operations", () => {
     ).rejects.toMatchObject({
       code: "FILE_NOT_FOUND",
       message: `file not found: ${filePath}`,
+    });
+  });
+
+  it("deletes files", async () => {
+    const dir = await createTempDir();
+    const filePath = join(dir, "delete-me.txt");
+    await writeFile(filePath, "bye", "utf8");
+
+    const result = await deleteBotmaxFile({
+      path: filePath,
+      encoding: "utf8",
+    });
+
+    expect(result).toEqual({
+      path: filePath,
+      encoding: "utf8",
+      sizeBytes: 0,
+    });
+    await expect(readFile(filePath, "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
     });
   });
 });
