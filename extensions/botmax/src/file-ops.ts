@@ -1,6 +1,15 @@
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { isDeepStrictEqual } from "node:util";
+import {
+  getRuntimeConfigSnapshot,
+  type OpenClawConfig,
+} from "openclaw/plugin-sdk/config-runtime";
+import { normalizeAccountId } from "openclaw/plugin-sdk/routing";
+import type { ChannelId } from "../../../src/channels/plugins/types.js";
+import type { GatewayRequestContext } from "../../../src/gateway/server-methods/types.js";
 import type { BotmaxFileEncoding } from "./message-format.js";
+import { getBotmaxRuntime } from "./runtime.js";
 
 export type BotmaxFileReadResult = {
   path: string;
@@ -21,6 +30,33 @@ export type BotmaxFileDeleteResult = {
   sizeBytes: number;
 };
 
+type ManagedRuntimeSection = "models" | "agents" | "bindings" | "channels";
+
+type OpenClawBindingEntry = {
+  match?: {
+    channel?: unknown;
+    accountId?: unknown;
+  };
+};
+
+type BindingRestartTarget = {
+  channelId: string;
+  accountId?: string;
+};
+
+const MANAGED_RUNTIME_SECTION_BY_PATH: Record<string, ManagedRuntimeSection> = {
+  "/root/.openclaw/models.json": "models",
+  "/root/.openclaw/agents.json": "agents",
+  "/root/.openclaw/bindings.json": "bindings",
+  "/root/.openclaw/channels.json": "channels",
+};
+
+const FALLBACK_GATEWAY_CONTEXT_STATE_KEY: unique symbol = Symbol.for(
+  "openclaw.fallbackGatewayContextState",
+);
+
+const CHANNELS_EXCLUDED_FROM_BINDING_RESTART_FALLBACK = new Set(["botmax"]);
+
 export class BotmaxFileOperationError extends Error {
   readonly code: string;
 
@@ -29,6 +65,233 @@ export class BotmaxFileOperationError extends Error {
     this.name = "BotmaxFileOperationError";
     this.code = code;
   }
+}
+
+function normalizeManagedRuntimePath(value: string): string {
+  return value.trim().replace(/\\/g, "/").replace(/\/+/g, "/").toLowerCase();
+}
+
+function resolveManagedRuntimeSection(path: string): ManagedRuntimeSection | null {
+  return MANAGED_RUNTIME_SECTION_BY_PATH[normalizeManagedRuntimePath(path)] ?? null;
+}
+
+function cloneManagedRuntimeValue<T>(value: T): T {
+  return structuredClone(value);
+}
+
+function parseBotmaxJsonContent(content: string): unknown | undefined {
+  try {
+    return JSON.parse(content);
+  } catch {
+    return undefined;
+  }
+}
+
+function updateManagedRuntimeSection(
+  target: OpenClawConfig | null,
+  section: ManagedRuntimeSection,
+  nextValue: unknown,
+): void {
+  if (!target) {
+    return;
+  }
+  (target as Record<string, unknown>)[section] = cloneManagedRuntimeValue(nextValue);
+}
+
+function resolveManagedRuntimeMirrorTargets(): OpenClawConfig[] {
+  const targets: OpenClawConfig[] = [];
+
+  try {
+    const runtimeConfig = getBotmaxRuntime().config.loadConfig();
+    if (runtimeConfig && typeof runtimeConfig === "object") {
+      targets.push(runtimeConfig);
+    }
+  } catch {
+    // Botmax file operations also run in tests or early startup paths where
+    // the plugin runtime may not be initialized yet.
+  }
+
+  const runtimeSnapshot = getRuntimeConfigSnapshot();
+  if (
+    runtimeSnapshot &&
+    typeof runtimeSnapshot === "object" &&
+    !targets.includes(runtimeSnapshot)
+  ) {
+    targets.push(runtimeSnapshot);
+  }
+
+  return targets;
+}
+
+function logBotmaxRuntimeMirror(message: string): void {
+  console.log(`[botmax] ${message}`);
+  try {
+    const runtime = getBotmaxRuntime();
+    runtime.logging.getChildLogger({ plugin: "botmax", feature: "managed-config-mirror" }).info(
+      message,
+    );
+  } catch {
+    // Console log above is the canonical fallback for container diagnostics.
+  }
+}
+
+function resolveFallbackGatewayContext():
+  | Pick<GatewayRequestContext, "logGateway" | "startChannel" | "stopChannel">
+  | null {
+  const state = (globalThis as Record<PropertyKey, unknown>)[
+    FALLBACK_GATEWAY_CONTEXT_STATE_KEY
+  ] as
+    | {
+        context?:
+          | Pick<GatewayRequestContext, "logGateway" | "startChannel" | "stopChannel">
+          | undefined;
+      }
+    | undefined;
+  return state?.context ?? null;
+}
+
+function normalizeBindingChannelId(value: unknown): string {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+function resolveBindingRestartAccountId(value: unknown): string | undefined {
+  if (typeof value === "string" && value.trim() === "*") {
+    return undefined;
+  }
+  return normalizeAccountId(typeof value === "string" ? value : undefined);
+}
+
+function addBindingRestartTargets(
+  plan: Map<string, { allAccounts: boolean; accountIds: Set<string> }>,
+  bindings: unknown,
+): void {
+  if (!Array.isArray(bindings)) {
+    return;
+  }
+
+  for (const entry of bindings as OpenClawBindingEntry[]) {
+    const channelId = normalizeBindingChannelId(entry?.match?.channel);
+    if (!channelId || CHANNELS_EXCLUDED_FROM_BINDING_RESTART_FALLBACK.has(channelId)) {
+      continue;
+    }
+
+    const accountId = resolveBindingRestartAccountId(entry?.match?.accountId);
+    const existing = plan.get(channelId) ?? { allAccounts: false, accountIds: new Set<string>() };
+    if (accountId) {
+      if (!existing.allAccounts) {
+        existing.accountIds.add(accountId);
+      }
+    } else {
+      existing.allAccounts = true;
+      existing.accountIds.clear();
+    }
+    plan.set(channelId, existing);
+  }
+}
+
+function buildBindingRestartTargets(params: {
+  previousBindings: unknown;
+  nextBindings: unknown;
+}): BindingRestartTarget[] {
+  if (isDeepStrictEqual(params.previousBindings, params.nextBindings)) {
+    return [];
+  }
+
+  const plan = new Map<string, { allAccounts: boolean; accountIds: Set<string> }>();
+  addBindingRestartTargets(plan, params.previousBindings);
+  addBindingRestartTargets(plan, params.nextBindings);
+
+  const targets: BindingRestartTarget[] = [];
+  for (const [channelId, state] of plan) {
+    if (state.allAccounts || state.accountIds.size === 0) {
+      targets.push({ channelId });
+      continue;
+    }
+    for (const accountId of state.accountIds) {
+      targets.push({ channelId, accountId });
+    }
+  }
+  return targets;
+}
+
+export async function refreshBotmaxBindingsAfterWrite(params: {
+  previousBindings: unknown;
+  nextBindings: unknown;
+}): Promise<void> {
+  const targets = buildBindingRestartTargets(params);
+  const context = resolveFallbackGatewayContext();
+
+  if (targets.length === 0) {
+    context?.logGateway.info(
+      "[botmax] bindings hot reload skipped: no restart targets",
+    );
+    return;
+  }
+
+  if (!context) {
+    const targetSummary = targets
+      .map((target) => (target.accountId ? `${target.channelId}:${target.accountId}` : target.channelId))
+      .join(", ");
+    console.log(
+      `[botmax] bindings hot reload skipped: fallback gateway context unavailable (targets: ${targetSummary})`,
+    );
+    return;
+  }
+
+  context.logGateway.info(
+    `[botmax] bindings hot reload active; restart targets: ${targets
+      .map((target) => (target.accountId ? `${target.channelId}:${target.accountId}` : target.channelId))
+      .join(", ")}`,
+  );
+
+  for (const target of targets) {
+    const label = target.accountId ? `${target.channelId}:${target.accountId}` : target.channelId;
+    try {
+      context.logGateway.info(
+        `[botmax] restarting channel after bindings write: ${label}`,
+      );
+      await context.stopChannel(target.channelId as ChannelId, target.accountId);
+      await context.startChannel(target.channelId as ChannelId, target.accountId);
+    } catch (error) {
+      context.logGateway.warn(
+        `[botmax] failed to restart channel after bindings write (${label}): ${String(error)}`,
+      );
+    }
+  }
+}
+
+export function syncBotmaxManagedRuntimeConfigMirror(params: {
+  path: string;
+  content: string;
+}): boolean {
+  const section = resolveManagedRuntimeSection(params.path);
+  if (!section) {
+    return false;
+  }
+
+  const runtimeTargets = resolveManagedRuntimeMirrorTargets();
+  if (runtimeTargets.length === 0) {
+    logBotmaxRuntimeMirror(
+      `managed config mirror skipped for ${section}: no live runtime targets`,
+    );
+    return false;
+  }
+
+  const parsed = parseBotmaxJsonContent(params.content);
+  if (parsed === undefined) {
+    logBotmaxRuntimeMirror(
+      `managed config mirror skipped for ${section}: invalid JSON payload`,
+    );
+    return false;
+  }
+
+  for (const target of runtimeTargets) {
+    updateManagedRuntimeSection(target, section, parsed);
+  }
+  logBotmaxRuntimeMirror(
+    `managed config mirror applied for ${section}: updated ${runtimeTargets.length} live target(s)`,
+  );
+  return true;
 }
 
 export function normalizeBotmaxFileEncoding(value: string | undefined): BotmaxFileEncoding {
@@ -70,14 +333,35 @@ export async function writeBotmaxFile(params: {
 }): Promise<BotmaxFileWriteResult> {
   const normalizedPath = requirePath(params.path);
   const encoding = normalizeBotmaxFileEncoding(params.encoding);
+  const managedSection = resolveManagedRuntimeSection(normalizedPath);
+  let previousManagedBindings: unknown;
 
   try {
     if (params.ensureDirectory ?? true) {
       await mkdir(dirname(normalizedPath), { recursive: true });
     }
 
+    if (managedSection === "bindings") {
+      try {
+        previousManagedBindings = parseBotmaxJsonContent(await readFile(normalizedPath, "utf8"));
+      } catch {
+        previousManagedBindings = getRuntimeConfigSnapshot()?.bindings;
+      }
+    }
+
     const buffer = decodeContent(params.content, encoding);
     await writeFile(normalizedPath, buffer);
+    const utf8Content = encoding === "utf8" ? params.content : buffer.toString("utf8");
+    const mirroredManagedRuntime = syncBotmaxManagedRuntimeConfigMirror({
+      path: normalizedPath,
+      content: utf8Content,
+    });
+    if (managedSection === "bindings" && !mirroredManagedRuntime) {
+      await refreshBotmaxBindingsAfterWrite({
+        previousBindings: previousManagedBindings,
+        nextBindings: parseBotmaxJsonContent(utf8Content),
+      });
+    }
 
     return {
       path: normalizedPath,

@@ -1,12 +1,33 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
-import { deleteBotmaxFile, readBotmaxFile, writeBotmaxFile } from "./file-ops.js";
+import type { OpenClawConfig } from "openclaw/plugin-sdk/config-runtime";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { clearBotmaxRuntime, setBotmaxRuntime } from "./runtime.js";
+
+const { runtimeSnapshotRef } = vi.hoisted(() => ({
+  runtimeSnapshotRef: { current: null as OpenClawConfig | null },
+}));
+
+vi.mock("openclaw/plugin-sdk/config-runtime", () => ({
+  getRuntimeConfigSnapshot: () => runtimeSnapshotRef.current,
+}));
+
+import {
+  deleteBotmaxFile,
+  readBotmaxFile,
+  refreshBotmaxBindingsAfterWrite,
+  syncBotmaxManagedRuntimeConfigMirror,
+  writeBotmaxFile,
+} from "./file-ops.js";
 
 const tempDirs: string[] = [];
+const FALLBACK_GATEWAY_CONTEXT_STATE_KEY = Symbol.for("openclaw.fallbackGatewayContextState");
 
 afterEach(async () => {
+  runtimeSnapshotRef.current = null;
+  clearBotmaxRuntime();
+  delete (globalThis as Record<PropertyKey, unknown>)[FALLBACK_GATEWAY_CONTEXT_STATE_KEY];
   while (tempDirs.length > 0) {
     const dir = tempDirs.pop();
     if (!dir) {
@@ -126,5 +147,202 @@ describe("botmax file operations", () => {
     await expect(readFile(filePath, "utf8")).rejects.toMatchObject({
       code: "ENOENT",
     });
+  });
+
+  it("mirrors managed bindings writes into the active runtime snapshots", () => {
+    const runtimeSnapshot: OpenClawConfig = {
+      bindings: [{ agentId: "main", match: { channel: "slack", accountId: "default" } }],
+      channels: { slack: { enabled: true } },
+    };
+    runtimeSnapshotRef.current = runtimeSnapshot;
+
+    syncBotmaxManagedRuntimeConfigMirror({
+      path: "/root/.openclaw/bindings.json",
+      content: JSON.stringify([
+        { agentId: "research", match: { channel: "slack", accountId: "default" } },
+      ]),
+    });
+
+    expect(runtimeSnapshot.bindings).toEqual([
+      { agentId: "research", match: { channel: "slack", accountId: "default" } },
+    ]);
+    expect(runtimeSnapshotRef.current?.bindings).toEqual([
+      { agentId: "research", match: { channel: "slack", accountId: "default" } },
+    ]);
+  });
+
+  it("prefers the injected botmax runtime config target when available", () => {
+    const liveRuntimeConfig: OpenClawConfig = {
+      bindings: [{ agentId: "main", match: { channel: "slack", accountId: "default" } }],
+    };
+    const runtimeSnapshot: OpenClawConfig = {
+      bindings: [{ agentId: "main", match: { channel: "slack", accountId: "default" } }],
+    };
+    runtimeSnapshotRef.current = runtimeSnapshot;
+
+    setBotmaxRuntime({
+      version: "test",
+      config: {
+        loadConfig: () => liveRuntimeConfig,
+        writeConfigFile: vi.fn(),
+      },
+      logging: {
+        shouldLogVerbose: vi.fn(),
+        getChildLogger: () => ({
+          debug: vi.fn(),
+          info: vi.fn(),
+          warn: vi.fn(),
+          error: vi.fn(),
+        }),
+      },
+    } as never);
+
+    const mirrored = syncBotmaxManagedRuntimeConfigMirror({
+      path: "/root/.openclaw/bindings.json",
+      content: JSON.stringify([
+        { agentId: "research", match: { channel: "slack", accountId: "default" } },
+      ]),
+    });
+
+    expect(mirrored).toBe(true);
+    expect(liveRuntimeConfig.bindings).toEqual([
+      { agentId: "research", match: { channel: "slack", accountId: "default" } },
+    ]);
+    expect(runtimeSnapshot.bindings).toEqual([
+      { agentId: "research", match: { channel: "slack", accountId: "default" } },
+    ]);
+  });
+
+  it("preserves group peer bindings when mirroring managed bindings writes", () => {
+    const liveRuntimeConfig: OpenClawConfig = {
+      bindings: [
+        {
+          agentId: "main",
+          match: {
+            channel: "telegram",
+            accountId: "baoozi2bot",
+            peer: { kind: "group", id: "-5249938441" },
+          },
+        },
+      ],
+    };
+
+    setBotmaxRuntime({
+      version: "test",
+      config: {
+        loadConfig: () => liveRuntimeConfig,
+        writeConfigFile: vi.fn(),
+      },
+      logging: {
+        shouldLogVerbose: vi.fn(),
+        getChildLogger: () => ({
+          debug: vi.fn(),
+          info: vi.fn(),
+          warn: vi.fn(),
+          error: vi.fn(),
+        }),
+      },
+    } as never);
+
+    const mirrored = syncBotmaxManagedRuntimeConfigMirror({
+      path: "/root/.openclaw/bindings.json",
+      content: JSON.stringify([
+        {
+          agentId: "coder",
+          match: {
+            channel: "telegram",
+            accountId: "baoozi2bot",
+            peer: { kind: "group", id: "-5249938441" },
+          },
+        },
+      ]),
+    });
+
+    expect(mirrored).toBe(true);
+    expect(liveRuntimeConfig.bindings).toEqual([
+      {
+        agentId: "coder",
+        match: {
+          channel: "telegram",
+          accountId: "baoozi2bot",
+          peer: { kind: "group", id: "-5249938441" },
+        },
+      },
+    ]);
+  });
+
+  it("ignores invalid managed config JSON while still leaving snapshots untouched", () => {
+    const runtimeSnapshot: OpenClawConfig = {
+      bindings: [{ agentId: "main", match: { channel: "feishu", accountId: "default" } }],
+    };
+    runtimeSnapshotRef.current = runtimeSnapshot;
+
+    syncBotmaxManagedRuntimeConfigMirror({
+      path: "/root/.openclaw/bindings.json",
+      content: "{not-json",
+    });
+
+    expect(runtimeSnapshot.bindings).toEqual([
+      { agentId: "main", match: { channel: "feishu", accountId: "default" } },
+    ]);
+    expect(runtimeSnapshotRef.current?.bindings).toEqual([
+      { agentId: "main", match: { channel: "feishu", accountId: "default" } },
+    ]);
+  });
+
+  it("restarts affected channel accounts after managed bindings writes when mirror fallback is needed", async () => {
+    const stopChannel = vi.fn(async () => {});
+    const startChannel = vi.fn(async () => {});
+    (globalThis as Record<PropertyKey, unknown>)[FALLBACK_GATEWAY_CONTEXT_STATE_KEY] = {
+      context: {
+        stopChannel,
+        startChannel,
+        logGateway: {
+          info: vi.fn(),
+          warn: vi.fn(),
+        },
+      },
+    };
+
+    await refreshBotmaxBindingsAfterWrite({
+      previousBindings: [
+        { agentId: "main", match: { channel: "slack", accountId: "t0amkdte7a6" } },
+        { agentId: "main", match: { channel: "telegram", accountId: "baoozibot" } },
+      ],
+      nextBindings: [
+        { agentId: "coder", match: { channel: "slack", accountId: "t0amkdte7a6" } },
+        { agentId: "research", match: { channel: "telegram", accountId: "baoozibot" } },
+      ],
+    });
+
+    expect(stopChannel).toHaveBeenCalledTimes(2);
+    expect(stopChannel).toHaveBeenCalledWith("slack", "t0amkdte7a6");
+    expect(stopChannel).toHaveBeenCalledWith("telegram", "baoozibot");
+    expect(startChannel).toHaveBeenCalledTimes(2);
+    expect(startChannel).toHaveBeenCalledWith("slack", "t0amkdte7a6");
+    expect(startChannel).toHaveBeenCalledWith("telegram", "baoozibot");
+  });
+
+  it("restarts the whole channel when wildcard-account bindings change", async () => {
+    const stopChannel = vi.fn(async () => {});
+    const startChannel = vi.fn(async () => {});
+    (globalThis as Record<PropertyKey, unknown>)[FALLBACK_GATEWAY_CONTEXT_STATE_KEY] = {
+      context: {
+        stopChannel,
+        startChannel,
+        logGateway: {
+          info: vi.fn(),
+          warn: vi.fn(),
+        },
+      },
+    };
+
+    await refreshBotmaxBindingsAfterWrite({
+      previousBindings: [{ agentId: "main", match: { channel: "feishu", accountId: "*" } }],
+      nextBindings: [{ agentId: "coder", match: { channel: "feishu", accountId: "*" } }],
+    });
+
+    expect(stopChannel).toHaveBeenCalledWith("feishu", undefined);
+    expect(startChannel).toHaveBeenCalledWith("feishu", undefined);
   });
 });

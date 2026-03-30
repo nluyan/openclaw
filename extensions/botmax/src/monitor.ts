@@ -35,6 +35,7 @@ const RETRY_DELAYS_MS = [1000, 2000, 5000, 10000, 15000, 30000];
 const HEARTBEAT_INTERVAL_MS = 10_000;
 const HEARTBEAT_PING = "<<<ping>>>";
 const HEARTBEAT_PONG = "<<<pong>>>";
+const BOTMAX_RUNTIME_BUILD_MARKER = "botmax-hot-bindings-reload-2026-03-30-v2";
 
 async function openSocket(url: string, abortSignal: AbortSignal): Promise<WebSocket> {
   return await new Promise((resolve, reject) => {
@@ -120,6 +121,10 @@ export function monitorBotmaxAccount(options: BotmaxMonitorOptions): { stop: () 
   const { account, config, runtime, abortSignal, statusSink } = options;
   let stopped = false;
   let activeSocket: WebSocket | null = null;
+
+  runtime.log?.(
+    `botmax[${account.accountId}]: runtime marker ${BOTMAX_RUNTIME_BUILD_MARKER}`,
+  );
 
   const stop = () => {
     stopped = true;
