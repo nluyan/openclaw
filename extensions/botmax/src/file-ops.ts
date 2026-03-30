@@ -5,11 +5,14 @@ import {
   getRuntimeConfigSnapshot,
   type OpenClawConfig,
 } from "openclaw/plugin-sdk/config-runtime";
+import type { GatewayRequestHandlerOptions } from "openclaw/plugin-sdk/core";
 import { normalizeAccountId } from "openclaw/plugin-sdk/routing";
-import type { ChannelId } from "../../../src/channels/plugins/types.js";
-import type { GatewayRequestContext } from "../../../src/gateway/server-methods/types.js";
+import { resolveGlobalSingleton } from "openclaw/plugin-sdk/text-runtime";
 import type { BotmaxFileEncoding } from "./message-format.js";
 import { getBotmaxRuntime } from "./runtime.js";
+
+type ChannelId = string;
+type GatewayRequestContext = GatewayRequestHandlerOptions["context"];
 
 export type BotmaxFileReadResult = {
   path: string;
@@ -39,10 +42,15 @@ type OpenClawBindingEntry = {
   };
 };
 
-type BindingRestartTarget = {
+type ManagedRuntimeRestartTarget = {
   channelId: string;
   accountId?: string;
 };
+
+type ManagedRuntimeRestartOutcome =
+  | { status: "no-targets" }
+  | { status: "context-unavailable"; targets: ManagedRuntimeRestartTarget[] }
+  | { status: "restarted"; targets: ManagedRuntimeRestartTarget[] };
 
 const MANAGED_RUNTIME_SECTION_BY_PATH: Record<string, ManagedRuntimeSection> = {
   "/root/.openclaw/models.json": "models",
@@ -54,6 +62,21 @@ const MANAGED_RUNTIME_SECTION_BY_PATH: Record<string, ManagedRuntimeSection> = {
 const FALLBACK_GATEWAY_CONTEXT_STATE_KEY: unique symbol = Symbol.for(
   "openclaw.fallbackGatewayContextState",
 );
+
+type FallbackGatewayContext = Pick<
+  GatewayRequestContext,
+  "logGateway" | "startChannel" | "stopChannel"
+>;
+
+type FallbackGatewayContextState = {
+  context: FallbackGatewayContext | undefined;
+};
+
+const fallbackGatewayContextState =
+  resolveGlobalSingleton<FallbackGatewayContextState>(
+    FALLBACK_GATEWAY_CONTEXT_STATE_KEY,
+    () => ({ context: undefined }),
+  );
 
 const CHANNELS_EXCLUDED_FROM_BINDING_RESTART_FALLBACK = new Set(["botmax"]);
 
@@ -71,8 +94,12 @@ function normalizeManagedRuntimePath(value: string): string {
   return value.trim().replace(/\\/g, "/").replace(/\/+/g, "/").toLowerCase();
 }
 
-function resolveManagedRuntimeSection(path: string): ManagedRuntimeSection | null {
-  return MANAGED_RUNTIME_SECTION_BY_PATH[normalizeManagedRuntimePath(path)] ?? null;
+function resolveManagedRuntimeSection(
+  path: string,
+): ManagedRuntimeSection | null {
+  return (
+    MANAGED_RUNTIME_SECTION_BY_PATH[normalizeManagedRuntimePath(path)] ?? null
+  );
 }
 
 function cloneManagedRuntimeValue<T>(value: T): T {
@@ -95,7 +122,8 @@ function updateManagedRuntimeSection(
   if (!target) {
     return;
   }
-  (target as Record<string, unknown>)[section] = cloneManagedRuntimeValue(nextValue);
+  (target as Record<string, unknown>)[section] =
+    cloneManagedRuntimeValue(nextValue);
 }
 
 function resolveManagedRuntimeMirrorTargets(): OpenClawConfig[] {
@@ -127,27 +155,16 @@ function logBotmaxRuntimeMirror(message: string): void {
   console.log(`[botmax] ${message}`);
   try {
     const runtime = getBotmaxRuntime();
-    runtime.logging.getChildLogger({ plugin: "botmax", feature: "managed-config-mirror" }).info(
-      message,
-    );
+    runtime.logging
+      .getChildLogger({ plugin: "botmax", feature: "managed-config-mirror" })
+      .info(message);
   } catch {
     // Console log above is the canonical fallback for container diagnostics.
   }
 }
 
-function resolveFallbackGatewayContext():
-  | Pick<GatewayRequestContext, "logGateway" | "startChannel" | "stopChannel">
-  | null {
-  const state = (globalThis as Record<PropertyKey, unknown>)[
-    FALLBACK_GATEWAY_CONTEXT_STATE_KEY
-  ] as
-    | {
-        context?:
-          | Pick<GatewayRequestContext, "logGateway" | "startChannel" | "stopChannel">
-          | undefined;
-      }
-    | undefined;
-  return state?.context ?? null;
+function resolveFallbackGatewayContext(): FallbackGatewayContext | null {
+  return fallbackGatewayContextState.context ?? null;
 }
 
 function normalizeBindingChannelId(value: unknown): string {
@@ -171,12 +188,18 @@ function addBindingRestartTargets(
 
   for (const entry of bindings as OpenClawBindingEntry[]) {
     const channelId = normalizeBindingChannelId(entry?.match?.channel);
-    if (!channelId || CHANNELS_EXCLUDED_FROM_BINDING_RESTART_FALLBACK.has(channelId)) {
+    if (
+      !channelId ||
+      CHANNELS_EXCLUDED_FROM_BINDING_RESTART_FALLBACK.has(channelId)
+    ) {
       continue;
     }
 
     const accountId = resolveBindingRestartAccountId(entry?.match?.accountId);
-    const existing = plan.get(channelId) ?? { allAccounts: false, accountIds: new Set<string>() };
+    const existing = plan.get(channelId) ?? {
+      allAccounts: false,
+      accountIds: new Set<string>(),
+    };
     if (accountId) {
       if (!existing.allAccounts) {
         existing.accountIds.add(accountId);
@@ -192,16 +215,19 @@ function addBindingRestartTargets(
 function buildBindingRestartTargets(params: {
   previousBindings: unknown;
   nextBindings: unknown;
-}): BindingRestartTarget[] {
+}): ManagedRuntimeRestartTarget[] {
   if (isDeepStrictEqual(params.previousBindings, params.nextBindings)) {
     return [];
   }
 
-  const plan = new Map<string, { allAccounts: boolean; accountIds: Set<string> }>();
+  const plan = new Map<
+    string,
+    { allAccounts: boolean; accountIds: Set<string> }
+  >();
   addBindingRestartTargets(plan, params.previousBindings);
   addBindingRestartTargets(plan, params.nextBindings);
 
-  const targets: BindingRestartTarget[] = [];
+  const targets: ManagedRuntimeRestartTarget[] = [];
   for (const [channelId, state] of plan) {
     if (state.allAccounts || state.accountIds.size === 0) {
       targets.push({ channelId });
@@ -214,50 +240,86 @@ function buildBindingRestartTargets(params: {
   return targets;
 }
 
-export async function refreshBotmaxBindingsAfterWrite(params: {
-  previousBindings: unknown;
-  nextBindings: unknown;
-}): Promise<void> {
-  const targets = buildBindingRestartTargets(params);
+async function restartManagedRuntimeTargets(params: {
+  targets: ManagedRuntimeRestartTarget[];
+}): Promise<ManagedRuntimeRestartOutcome> {
   const context = resolveFallbackGatewayContext();
 
-  if (targets.length === 0) {
+  if (params.targets.length === 0) {
+    console.log("[botmax] bindings hot reload skipped: no restart targets");
     context?.logGateway.info(
       "[botmax] bindings hot reload skipped: no restart targets",
     );
-    return;
+    return { status: "no-targets" };
   }
 
   if (!context) {
-    const targetSummary = targets
-      .map((target) => (target.accountId ? `${target.channelId}:${target.accountId}` : target.channelId))
+    const targetSummary = params.targets
+      .map((target) =>
+        target.accountId
+          ? `${target.channelId}:${target.accountId}`
+          : target.channelId,
+      )
       .join(", ");
     console.log(
       `[botmax] bindings hot reload skipped: fallback gateway context unavailable (targets: ${targetSummary})`,
     );
-    return;
+    return { status: "context-unavailable", targets: params.targets };
   }
 
+  console.log(
+    `[botmax] bindings hot reload active; restart targets: ${params.targets
+      .map((target) =>
+        target.accountId
+          ? `${target.channelId}:${target.accountId}`
+          : target.channelId,
+      )
+      .join(", ")}`,
+  );
   context.logGateway.info(
-    `[botmax] bindings hot reload active; restart targets: ${targets
-      .map((target) => (target.accountId ? `${target.channelId}:${target.accountId}` : target.channelId))
+    `[botmax] bindings hot reload active; restart targets: ${params.targets
+      .map((target) =>
+        target.accountId
+          ? `${target.channelId}:${target.accountId}`
+          : target.channelId,
+      )
       .join(", ")}`,
   );
 
-  for (const target of targets) {
-    const label = target.accountId ? `${target.channelId}:${target.accountId}` : target.channelId;
+  for (const target of params.targets) {
+    const label = target.accountId
+      ? `${target.channelId}:${target.accountId}`
+      : target.channelId;
     try {
+      console.log(`[botmax] restarting channel after bindings write: ${label}`);
       context.logGateway.info(
         `[botmax] restarting channel after bindings write: ${label}`,
       );
-      await context.stopChannel(target.channelId as ChannelId, target.accountId);
-      await context.startChannel(target.channelId as ChannelId, target.accountId);
+      await context.stopChannel(
+        target.channelId as ChannelId,
+        target.accountId,
+      );
+      await context.startChannel(
+        target.channelId as ChannelId,
+        target.accountId,
+      );
     } catch (error) {
       context.logGateway.warn(
         `[botmax] failed to restart channel after bindings write (${label}): ${String(error)}`,
       );
     }
   }
+
+  return { status: "restarted", targets: params.targets };
+}
+
+export async function refreshBotmaxBindingsAfterWrite(params: {
+  previousBindings: unknown;
+  nextBindings: unknown;
+}): Promise<ManagedRuntimeRestartOutcome> {
+  return await restartManagedRuntimeTargets({
+    targets: buildBindingRestartTargets(params),
+  });
 }
 
 export function syncBotmaxManagedRuntimeConfigMirror(params: {
@@ -294,7 +356,9 @@ export function syncBotmaxManagedRuntimeConfigMirror(params: {
   return true;
 }
 
-export function normalizeBotmaxFileEncoding(value: string | undefined): BotmaxFileEncoding {
+export function normalizeBotmaxFileEncoding(
+  value: string | undefined,
+): BotmaxFileEncoding {
   const normalized = value?.trim().toLowerCase();
   if (!normalized || normalized === "utf8" || normalized === "utf-8") {
     return "utf8";
@@ -302,7 +366,10 @@ export function normalizeBotmaxFileEncoding(value: string | undefined): BotmaxFi
   if (normalized === "base64") {
     return "base64";
   }
-  throw new BotmaxFileOperationError("INVALID_ENCODING", `unsupported file encoding: ${value}`);
+  throw new BotmaxFileOperationError(
+    "INVALID_ENCODING",
+    `unsupported file encoding: ${value}`,
+  );
 }
 
 export async function readBotmaxFile(params: {
@@ -343,7 +410,9 @@ export async function writeBotmaxFile(params: {
 
     if (managedSection === "bindings") {
       try {
-        previousManagedBindings = parseBotmaxJsonContent(await readFile(normalizedPath, "utf8"));
+        previousManagedBindings = parseBotmaxJsonContent(
+          await readFile(normalizedPath, "utf8"),
+        );
       } catch {
         previousManagedBindings = getRuntimeConfigSnapshot()?.bindings;
       }
@@ -351,16 +420,21 @@ export async function writeBotmaxFile(params: {
 
     const buffer = decodeContent(params.content, encoding);
     await writeFile(normalizedPath, buffer);
-    const utf8Content = encoding === "utf8" ? params.content : buffer.toString("utf8");
-    const mirroredManagedRuntime = syncBotmaxManagedRuntimeConfigMirror({
-      path: normalizedPath,
-      content: utf8Content,
-    });
-    if (managedSection === "bindings" && !mirroredManagedRuntime) {
-      await refreshBotmaxBindingsAfterWrite({
-        previousBindings: previousManagedBindings,
-        nextBindings: parseBotmaxJsonContent(utf8Content),
+    const utf8Content =
+      encoding === "utf8" ? params.content : buffer.toString("utf8");
+    const parsedManagedContent = parseBotmaxJsonContent(utf8Content);
+
+    if (managedSection !== "channels") {
+      const mirroredManagedRuntime = syncBotmaxManagedRuntimeConfigMirror({
+        path: normalizedPath,
+        content: utf8Content,
       });
+      if (managedSection === "bindings" && !mirroredManagedRuntime) {
+        await refreshBotmaxBindingsAfterWrite({
+          previousBindings: previousManagedBindings,
+          nextBindings: parsedManagedContent,
+        });
+      }
     }
 
     return {
@@ -419,34 +493,58 @@ function decodeBase64(content: string): Buffer {
   if (!normalized) {
     return Buffer.alloc(0);
   }
-  if (normalized.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(normalized)) {
-    throw new BotmaxFileOperationError("INVALID_BASE64", "content is not valid base64");
+  if (
+    normalized.length % 4 !== 0 ||
+    !/^[A-Za-z0-9+/]*={0,2}$/.test(normalized)
+  ) {
+    throw new BotmaxFileOperationError(
+      "INVALID_BASE64",
+      "content is not valid base64",
+    );
   }
   const buffer = Buffer.from(normalized, "base64");
   if (buffer.toString("base64") !== normalized) {
-    throw new BotmaxFileOperationError("INVALID_BASE64", "content is not valid base64");
+    throw new BotmaxFileOperationError(
+      "INVALID_BASE64",
+      "content is not valid base64",
+    );
   }
   return buffer;
 }
 
-function mapFileOperationError(path: string, error: unknown): BotmaxFileOperationError {
+function mapFileOperationError(
+  path: string,
+  error: unknown,
+): BotmaxFileOperationError {
   if (error instanceof BotmaxFileOperationError) {
     return error;
   }
 
   const code =
-    error && typeof error === "object" && "code" in error && typeof error.code === "string"
+    error &&
+    typeof error === "object" &&
+    "code" in error &&
+    typeof error.code === "string"
       ? error.code
       : undefined;
 
   if (code === "ENOENT") {
-    return new BotmaxFileOperationError("FILE_NOT_FOUND", `file not found: ${path}`);
+    return new BotmaxFileOperationError(
+      "FILE_NOT_FOUND",
+      `file not found: ${path}`,
+    );
   }
   if (code === "EACCES" || code === "EPERM") {
-    return new BotmaxFileOperationError("ACCESS_DENIED", `access denied: ${path}`);
+    return new BotmaxFileOperationError(
+      "ACCESS_DENIED",
+      `access denied: ${path}`,
+    );
   }
   if (code === "EISDIR") {
-    return new BotmaxFileOperationError("IS_DIRECTORY", `path is a directory: ${path}`);
+    return new BotmaxFileOperationError(
+      "IS_DIRECTORY",
+      `path is a directory: ${path}`,
+    );
   }
 
   return new BotmaxFileOperationError(

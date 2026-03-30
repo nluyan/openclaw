@@ -10,7 +10,12 @@ import {
   rememberBotmaxSender,
   setActiveConnection,
 } from "./connection.js";
-import { BotmaxFileOperationError, deleteBotmaxFile, readBotmaxFile, writeBotmaxFile } from "./file-ops.js";
+import {
+  BotmaxFileOperationError,
+  deleteBotmaxFile,
+  readBotmaxFile,
+  writeBotmaxFile,
+} from "./file-ops.js";
 import { handleBotmaxInbound } from "./inbound.js";
 import { parseBotmaxInboundText } from "./message-format.js";
 import type { OpenClawConfig, RuntimeEnv } from "./runtime-api.js";
@@ -35,9 +40,12 @@ const RETRY_DELAYS_MS = [1000, 2000, 5000, 10000, 15000, 30000];
 const HEARTBEAT_INTERVAL_MS = 10_000;
 const HEARTBEAT_PING = "<<<ping>>>";
 const HEARTBEAT_PONG = "<<<pong>>>";
-const BOTMAX_RUNTIME_BUILD_MARKER = "botmax-hot-bindings-reload-2026-03-30-v2";
+const BOTMAX_RUNTIME_BUILD_MARKER = "botmax-managed-config-2026-03-30-v8";
 
-async function openSocket(url: string, abortSignal: AbortSignal): Promise<WebSocket> {
+async function openSocket(
+  url: string,
+  abortSignal: AbortSignal,
+): Promise<WebSocket> {
   return await new Promise((resolve, reject) => {
     const ws = new WebSocket(url);
 
@@ -117,7 +125,9 @@ async function waitForDisconnect(
   });
 }
 
-export function monitorBotmaxAccount(options: BotmaxMonitorOptions): { stop: () => void } {
+export function monitorBotmaxAccount(options: BotmaxMonitorOptions): {
+  stop: () => void;
+} {
   const { account, config, runtime, abortSignal, statusSink } = options;
   let stopped = false;
   let activeSocket: WebSocket | null = null;
@@ -142,13 +152,19 @@ export function monitorBotmaxAccount(options: BotmaxMonitorOptions): { stop: () 
     while (!stopped && !abortSignal.aborted) {
       const url = buildBotmaxUrl(account);
       const redactedUrl = redactBotmaxUrl(url);
-      runtime.log?.(`botmax[${account.accountId}]: connecting to ${redactedUrl}`);
+      runtime.log?.(
+        `botmax[${account.accountId}]: connecting to ${redactedUrl}`,
+      );
 
       try {
         const ws = await openSocket(url, abortSignal);
         activeSocket = ws;
         attempt = 0;
-        statusSink?.({ running: true, lastStartAt: Date.now(), lastError: null });
+        statusSink?.({
+          running: true,
+          lastStartAt: Date.now(),
+          lastError: null,
+        });
 
         const sender = createBotmaxSender(ws);
         setActiveConnection({
@@ -162,14 +178,20 @@ export function monitorBotmaxAccount(options: BotmaxMonitorOptions): { stop: () 
         });
 
         const heartbeat = setInterval(() => {
-          if (stopped || abortSignal.aborted || ws.readyState !== WebSocket.OPEN) {
+          if (
+            stopped ||
+            abortSignal.aborted ||
+            ws.readyState !== WebSocket.OPEN
+          ) {
             return;
           }
           void sender
             .sendHeartbeat(HEARTBEAT_PING)
             .then((sent) => {
               if (!sent) {
-                runtime.log?.(`botmax[${account.accountId}] heartbeat suppressed`);
+                runtime.log?.(
+                  `botmax[${account.accountId}] heartbeat suppressed`,
+                );
               }
             })
             .catch((err) => {
@@ -226,7 +248,9 @@ export function monitorBotmaxAccount(options: BotmaxMonitorOptions): { stop: () 
               runtime,
               statusSink: (patch) => statusSink?.(patch),
             }).catch((err) => {
-              runtime.error?.(`botmax[${account.accountId}]: inbound error: ${String(err)}`);
+              runtime.error?.(
+                `botmax[${account.accountId}]: inbound error: ${String(err)}`,
+              );
             });
             return;
           }
@@ -405,8 +429,14 @@ export function monitorBotmaxAccount(options: BotmaxMonitorOptions): { stop: () 
         clearActiveConnection(account.accountId);
         const message = err instanceof Error ? err.message : String(err);
         if (message !== "aborted") {
-          runtime.error?.(`botmax[${account.accountId}]: connect failed: ${message}`);
-          statusSink?.({ lastError: message, running: false, lastStopAt: Date.now() });
+          runtime.error?.(
+            `botmax[${account.accountId}]: connect failed: ${message}`,
+          );
+          statusSink?.({
+            lastError: message,
+            running: false,
+            lastStopAt: Date.now(),
+          });
         }
       }
 
@@ -414,7 +444,8 @@ export function monitorBotmaxAccount(options: BotmaxMonitorOptions): { stop: () 
         break;
       }
 
-      const delay = RETRY_DELAYS_MS[Math.min(attempt, RETRY_DELAYS_MS.length - 1)];
+      const delay =
+        RETRY_DELAYS_MS[Math.min(attempt, RETRY_DELAYS_MS.length - 1)];
       attempt += 1;
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
@@ -434,9 +465,12 @@ async function sendBotmaxFileErrorResult(params: {
   runtime: RuntimeEnv;
   error: unknown;
 }): Promise<void> {
-  const output = params.error instanceof Error ? params.error.message : String(params.error);
+  const output =
+    params.error instanceof Error ? params.error.message : String(params.error);
   const errorCode =
-    params.error instanceof BotmaxFileOperationError ? params.error.code : "FILE_OPERATION_FAILED";
+    params.error instanceof BotmaxFileOperationError
+      ? params.error.code
+      : "FILE_OPERATION_FAILED";
 
   params.runtime.error?.(
     `botmax[${params.accountId}]: file ${params.operation} error (${params.path}): ${output}`,
