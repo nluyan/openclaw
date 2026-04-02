@@ -245,13 +245,17 @@ BotKeeper may still send trusted operational commands such as `openclaw gateway 
 - `openclaw nodes approve <requestId>` -> local node approval from state store
 - `openclaw nodes reject <requestId>` -> local node rejection from state store
 - `openclaw nodes rename --node <id|name|ip> --name <displayName>` -> local paired-node state rename
-- Any other first-class `openclaw <subcommand>` command is executed locally through the OpenClaw CLI.
-- `openclaw devices *` runs with CLI semantics and `operator.pairing` scope.
+- `openclaw pairing approve <channel> <code> [--account <accountId>]` -> local pairing-store approval
+- `openclaw directory groups list --channel feishu [--account <accountId>] [--query <query>] [--limit <n>]` -> in-process Feishu directory lookup
+- `openclaw devices *` remains an operator-pairing command family, but Botmax handles it entirely in-process instead of spawning the CLI.
 - `openclaw devices list/approve/reject` uses plugin-sdk pairing APIs directly.
 - `openclaw devices remove/clear/rotate/revoke` uses botmax-local device state helpers directly.
 - `openclaw nodes pending/approve/reject` uses botmax-local node state helpers directly.
 - `openclaw nodes rename` resolves the paired node locally by nodeId, display name, or remote IP, then updates the local node state directly.
+- `openclaw pairing approve` uses the shared channel pairing store directly.
+- `openclaw directory groups list --channel feishu ...` uses the Feishu extension runtime directly.
 - `openclaw gateway call *` is rejected. Server-side callers must send the corresponding direct CLI command instead.
+- Any unsupported `openclaw <subcommand>` is rejected explicitly. Botmax does not forward arbitrary CLI commands into a nested `openclaw` subprocess.
 
 ## Protocol Rules
 

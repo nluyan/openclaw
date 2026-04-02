@@ -3,11 +3,13 @@ import { executeBotmaxGatewayCommand } from "./command-exec.js";
 
 const listDevicePairingMock = vi.fn();
 const approveDevicePairingMock = vi.fn();
-const runPluginCommandWithTimeoutMock = vi.fn();
+const approveChannelPairingCodeMock = vi.fn();
+const listFeishuDirectoryGroupsLiveMock = vi.fn();
 const removePairedDeviceLocallyMock = vi.fn();
 const clearDevicePairingLocallyMock = vi.fn();
 const rotateDeviceTokenLocallyMock = vi.fn();
 const revokeDeviceTokenLocallyMock = vi.fn();
+const rejectDevicePairingLocallyMock = vi.fn();
 const listNodePairingLocallyMock = vi.fn();
 const approveNodePairingLocallyMock = vi.fn();
 const rejectNodePairingLocallyMock = vi.fn();
@@ -16,7 +18,18 @@ const renamePairedNodeLocallyMock = vi.fn();
 vi.mock("./runtime-api.js", () => ({
   listDevicePairing: (...args: unknown[]) => listDevicePairingMock(...args),
   approveDevicePairing: (...args: unknown[]) => approveDevicePairingMock(...args),
-  runPluginCommandWithTimeout: (...args: unknown[]) => runPluginCommandWithTimeoutMock(...args),
+}));
+
+vi.mock("openclaw/plugin-sdk/conversation-runtime", () => ({
+  approveChannelPairingCode: (...args: unknown[]) => approveChannelPairingCodeMock(...args),
+}));
+
+vi.mock("openclaw/plugin-sdk/config-runtime", () => ({
+  loadConfig: vi.fn(() => ({ channels: { feishu: {} } })),
+}));
+
+vi.mock("../../feishu/src/directory.js", () => ({
+  listFeishuDirectoryGroupsLive: (...args: unknown[]) => listFeishuDirectoryGroupsLiveMock(...args),
 }));
 
 vi.mock("./local-state-commands.js", () => ({
@@ -24,6 +37,7 @@ vi.mock("./local-state-commands.js", () => ({
   clearDevicePairingLocally: (...args: unknown[]) => clearDevicePairingLocallyMock(...args),
   rotateDeviceTokenLocally: (...args: unknown[]) => rotateDeviceTokenLocallyMock(...args),
   revokeDeviceTokenLocally: (...args: unknown[]) => revokeDeviceTokenLocallyMock(...args),
+  rejectDevicePairingLocally: (...args: unknown[]) => rejectDevicePairingLocallyMock(...args),
   listNodePairingLocally: (...args: unknown[]) => listNodePairingLocallyMock(...args),
   approveNodePairingLocally: (...args: unknown[]) => approveNodePairingLocallyMock(...args),
   rejectNodePairingLocally: (...args: unknown[]) => rejectNodePairingLocallyMock(...args),
@@ -33,11 +47,13 @@ vi.mock("./local-state-commands.js", () => ({
 function resetAllMocks() {
   listDevicePairingMock.mockReset();
   approveDevicePairingMock.mockReset();
-  runPluginCommandWithTimeoutMock.mockReset();
+  approveChannelPairingCodeMock.mockReset();
+  listFeishuDirectoryGroupsLiveMock.mockReset();
   removePairedDeviceLocallyMock.mockReset();
   clearDevicePairingLocallyMock.mockReset();
   rotateDeviceTokenLocallyMock.mockReset();
   revokeDeviceTokenLocallyMock.mockReset();
+  rejectDevicePairingLocallyMock.mockReset();
   listNodePairingLocallyMock.mockReset();
   approveNodePairingLocallyMock.mockReset();
   rejectNodePairingLocallyMock.mockReset();
@@ -55,7 +71,6 @@ describe("botmax command execution", () => {
 
     expect(listDevicePairingMock).toHaveBeenCalledTimes(1);
     expect(approveDevicePairingMock).not.toHaveBeenCalled();
-    expect(runPluginCommandWithTimeoutMock).not.toHaveBeenCalled();
     expect(result.ok).toBe(true);
     expect(result.method).toBe("device.pair.list");
   });
@@ -75,30 +90,22 @@ describe("botmax command execution", () => {
 
     expect(listDevicePairingMock).toHaveBeenCalledTimes(1);
     expect(approveDevicePairingMock).toHaveBeenCalledWith("req-001");
-    expect(runPluginCommandWithTimeoutMock).not.toHaveBeenCalled();
     expect(result.ok).toBe(true);
     expect(result.method).toBe("device.pair.approve");
   });
 
-  it("maps devices reject to forwarded command execution", async () => {
+  it("maps devices reject to local state handling", async () => {
     resetAllMocks();
-    runPluginCommandWithTimeoutMock.mockResolvedValueOnce({
-      code: 0,
-      stdout: JSON.stringify({
-        requestId: "req-002",
-        deviceId: "dev-002",
-      }),
-      stderr: "",
+    rejectDevicePairingLocallyMock.mockResolvedValueOnce({
+      requestId: "req-002",
+      deviceId: "dev-002",
     });
 
     const result = await executeBotmaxGatewayCommand({
       command: "openclaw devices reject req-002 --json",
     });
 
-    expect(runPluginCommandWithTimeoutMock).toHaveBeenCalledWith({
-      argv: ["openclaw", "devices", "reject", "req-002", "--json"],
-      timeoutMs: 30000,
-    });
+    expect(rejectDevicePairingLocallyMock).toHaveBeenCalledWith("req-002");
     expect(result.ok).toBe(true);
     expect(result.method).toBe("device.pair.reject");
   });
@@ -114,7 +121,6 @@ describe("botmax command execution", () => {
     });
 
     expect(removePairedDeviceLocallyMock).toHaveBeenCalledWith("dev-003");
-    expect(runPluginCommandWithTimeoutMock).not.toHaveBeenCalled();
     expect(result.ok).toBe(true);
     expect(result.method).toBe("device.pair.remove");
   });
@@ -133,7 +139,6 @@ describe("botmax command execution", () => {
     expect(clearDevicePairingLocallyMock).toHaveBeenCalledWith({
       includePending: true,
     });
-    expect(runPluginCommandWithTimeoutMock).not.toHaveBeenCalled();
     expect(result.ok).toBe(true);
     expect(result.method).toBe("device.pair.clear");
   });
@@ -158,7 +163,6 @@ describe("botmax command execution", () => {
       role: "operator",
       scopes: ["operator.read"],
     });
-    expect(runPluginCommandWithTimeoutMock).not.toHaveBeenCalled();
     expect(result.ok).toBe(true);
     expect(result.method).toBe("device.token.rotate");
   });
@@ -178,7 +182,6 @@ describe("botmax command execution", () => {
       deviceId: "dev-1",
       role: "operator",
     });
-    expect(runPluginCommandWithTimeoutMock).not.toHaveBeenCalled();
     expect(result.ok).toBe(true);
     expect(result.method).toBe("device.token.revoke");
   });
@@ -195,7 +198,6 @@ describe("botmax command execution", () => {
     });
 
     expect(listNodePairingLocallyMock).toHaveBeenCalledTimes(1);
-    expect(runPluginCommandWithTimeoutMock).not.toHaveBeenCalled();
     expect(result.ok).toBe(true);
     expect(result.method).toBe("node.pair.list");
   });
@@ -212,7 +214,6 @@ describe("botmax command execution", () => {
     });
 
     expect(approveNodePairingLocallyMock).toHaveBeenCalledWith("node-req-2");
-    expect(runPluginCommandWithTimeoutMock).not.toHaveBeenCalled();
     expect(result.ok).toBe(true);
     expect(result.method).toBe("node.pair.approve");
   });
@@ -229,7 +230,6 @@ describe("botmax command execution", () => {
     });
 
     expect(rejectNodePairingLocallyMock).toHaveBeenCalledWith("node-req-3");
-    expect(runPluginCommandWithTimeoutMock).not.toHaveBeenCalled();
     expect(result.ok).toBe(true);
     expect(result.method).toBe("node.pair.reject");
   });
@@ -249,29 +249,64 @@ describe("botmax command execution", () => {
       query: "node-4",
       displayName: "QA iPhone",
     });
-    expect(runPluginCommandWithTimeoutMock).not.toHaveBeenCalled();
     expect(result.ok).toBe(true);
     expect(result.method).toBe("node.rename");
   });
 
-  it("forwards direct cli commands without using gateway call", async () => {
+  it("maps pairing approve to the local pairing store", async () => {
     resetAllMocks();
-    runPluginCommandWithTimeoutMock.mockResolvedValueOnce({
-      code: 0,
-      stdout: '{"ok":true}',
-      stderr: "",
+    approveChannelPairingCodeMock.mockResolvedValueOnce({
+      id: "ou_247fc39615b7cb5e628a953f950d0996",
+      entry: {
+        code: "39YSN935",
+        meta: {
+          accountId: "cli_a931c9a3aeb89cee",
+          name: "Lu Yan",
+        },
+      },
     });
+
+    const result = await executeBotmaxGatewayCommand({
+      command: 'openclaw pairing approve feishu "39YSN935" --account "cli_a931c9a3aeb89cee"',
+    });
+
+    expect(approveChannelPairingCodeMock).toHaveBeenCalledWith({
+      channel: "feishu",
+      code: "39YSN935",
+      accountId: "cli_a931c9a3aeb89cee",
+    });
+    expect(result.ok).toBe(true);
+    expect(result.method).toBe("channel.pair.approve");
+  });
+
+  it("maps feishu directory groups list to internal runtime logic", async () => {
+    resetAllMocks();
+    listFeishuDirectoryGroupsLiveMock.mockResolvedValueOnce([
+      { kind: "group", id: "oc_group_1", name: "Ops" },
+    ]);
+
+    const result = await executeBotmaxGatewayCommand({
+      command: 'openclaw directory groups list --channel feishu --account "cli_a931c9a3aeb89cee" --json',
+    });
+
+    expect(listFeishuDirectoryGroupsLiveMock).toHaveBeenCalledWith({
+      cfg: { channels: { feishu: {} } },
+      accountId: "cli_a931c9a3aeb89cee",
+    });
+    expect(result.ok).toBe(true);
+    expect(result.method).toBe("channel.directory.groups.list");
+  });
+
+  it("rejects unsupported direct cli commands because forwarding is disabled", async () => {
+    resetAllMocks();
 
     const result = await executeBotmaxGatewayCommand({
       command: "openclaw health --json",
     });
 
-    expect(runPluginCommandWithTimeoutMock).toHaveBeenCalledWith({
-      argv: ["openclaw", "health", "--json"],
-      timeoutMs: 30000,
-    });
-    expect(result.ok).toBe(true);
-    expect(result.method).toBeUndefined();
+    expect(result.ok).toBe(false);
+    expect(result.output).toContain("Botmax command forwarding is disabled");
+    expect(result.output).toContain("openclaw health --json");
   });
 
   it("maps gateway restart to the internal SIGUSR1 scheduler instead of shelling out", async () => {
@@ -286,7 +321,6 @@ describe("botmax command execution", () => {
 
       expect(listenerCountSpy).toHaveBeenCalledWith("SIGUSR1");
       expect(emitSpy).toHaveBeenCalledWith("SIGUSR1");
-      expect(runPluginCommandWithTimeoutMock).not.toHaveBeenCalled();
       expect(result.ok).toBe(true);
       expect(result.method).toBe("gateway.restart");
       expect(result.output).toBe("gateway restart signal emitted");
@@ -303,7 +337,6 @@ describe("botmax command execution", () => {
       command: "openclaw gateway call health --json",
     });
 
-    expect(runPluginCommandWithTimeoutMock).not.toHaveBeenCalled();
     expect(result.ok).toBe(false);
     expect(result.output).toContain("no longer supported");
   });

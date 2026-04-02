@@ -15,7 +15,6 @@ export { buildRandomTempFilePath } from "openclaw/plugin-sdk/temp-path";
 export { resolveOutboundMediaUrls } from "openclaw/plugin-sdk/reply-payload";
 export { loadOutboundMediaFromUrl } from "openclaw/plugin-sdk/msteams";
 export { buildUntrustedChannelMetadata } from "openclaw/plugin-sdk/security-runtime";
-export { runPluginCommandWithTimeout } from "openclaw/plugin-sdk/sandbox";
 export {
   buildBaseChannelStatusSummary,
   collectStatusIssuesFromLastError,

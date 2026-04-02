@@ -1,8 +1,16 @@
 import {
+  approveChannelPairingCode,
+} from "openclaw/plugin-sdk/conversation-runtime";
+import { loadConfig } from "openclaw/plugin-sdk/config-runtime";
+import {
+  listFeishuDirectoryGroupsLive,
+} from "../../feishu/src/directory.js";
+import {
   approveNodePairingLocally,
   clearDevicePairingLocally,
   listNodePairingLocally,
   renamePairedNodeLocally,
+  rejectDevicePairingLocally,
   rejectNodePairingLocally,
   removePairedDeviceLocally,
   revokeDeviceTokenLocally,
@@ -11,7 +19,6 @@ import {
 import {
   approveDevicePairing,
   listDevicePairing,
-  runPluginCommandWithTimeout,
 } from "./runtime-api.js";
 
 type CommandMapping =
@@ -74,14 +81,25 @@ type CommandMapping =
       displayName: string;
     }
   | {
+      kind: "pairing.approve";
+      method: "channel.pair.approve";
+      channel: string;
+      code: string;
+      accountId?: string;
+    }
+  | {
+      kind: "directory.groups.list";
+      method: "channel.directory.groups.list";
+      channel: string;
+      accountId?: string;
+      query?: string;
+      limit?: number;
+    }
+  | {
       kind: "gateway.restart";
       method: "gateway.restart";
       delayMs?: number;
       reason?: string;
-    }
-  | {
-      kind: "command.forward";
-      argv: string[];
     };
 
 export type BotmaxCommandExecutionResult = {
@@ -92,7 +110,22 @@ export type BotmaxCommandExecutionResult = {
 };
 
 const DOUBLE_QUOTE_ESCAPES = new Set(["\\", '"', "$", "`", "\n", "\r"]);
-const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
+const SUPPORTED_BOTMAX_COMMANDS = [
+  "openclaw devices list",
+  "openclaw devices approve <requestId|--latest>",
+  "openclaw devices reject <requestId>",
+  "openclaw devices remove <deviceId>",
+  "openclaw devices clear --yes [--pending]",
+  "openclaw devices rotate --device <deviceId> --role <role> [--scope <scope>...]",
+  "openclaw devices revoke --device <deviceId> --role <role>",
+  "openclaw nodes pending",
+  "openclaw nodes approve <requestId>",
+  "openclaw nodes reject <requestId>",
+  "openclaw nodes rename --node <id|name|ip> --name <displayName>",
+  "openclaw pairing approve <channel> <code> [--account <accountId>]",
+  "openclaw directory groups list --channel feishu [--account <accountId>] [--query <query>] [--limit <n>]",
+  "openclaw gateway restart",
+].join("; ");
 
 function stringifyResult(value: unknown): string {
   if (typeof value === "string") {
@@ -198,6 +231,12 @@ function parseNonNegativeInteger(value: string, flagName: string): number {
     throw new Error(`${flagName} requires a non-negative integer`);
   }
   return Number.parseInt(normalized, 10);
+}
+
+function createUnsupportedCommandError(command: string): Error {
+  return new Error(
+    `Botmax command forwarding is disabled. Unsupported command: ${command}. Supported commands: ${SUPPORTED_BOTMAX_COMMANDS}`,
+  );
 }
 
 function readOptionValue(tokens: string[], index: number): { value?: string; nextIndex: number } {
@@ -405,6 +444,130 @@ function readRequiredLongOption(
   return {
     value: normalized,
     nextIndex,
+  };
+}
+
+function normalizePairingChannel(value: string): string {
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) {
+    throw new Error("pairing channel is required");
+  }
+  if (!/^[a-z][a-z0-9_-]{0,63}$/.test(normalized)) {
+    throw new Error(`invalid pairing channel: ${value}`);
+  }
+  return normalized;
+}
+
+function tryMapPairingApprove(tokens: string[]): CommandMapping | null {
+  let channel: string | undefined;
+  let accountId: string | undefined;
+  const positional: string[] = [];
+
+  for (let index = 3; index < tokens.length; index += 1) {
+    const token = tokens[index] ?? "";
+    if (!token || isJsonFlag(token)) {
+      continue;
+    }
+    if (token.startsWith("--channel")) {
+      const resolved = readRequiredLongOption(tokens, index, "--channel");
+      channel = normalizePairingChannel(resolved.value);
+      index = resolved.nextIndex;
+      continue;
+    }
+    if (token.startsWith("--account")) {
+      const resolved = readRequiredLongOption(tokens, index, "--account");
+      accountId = resolved.value.trim();
+      index = resolved.nextIndex;
+      continue;
+    }
+    if (token.startsWith("--notify")) {
+      return null;
+    }
+    if (token.startsWith("--")) {
+      return null;
+    }
+    positional.push(token.trim());
+  }
+
+  if (channel) {
+    if (positional.length !== 1) {
+      throw new Error("openclaw pairing approve with --channel requires exactly one code");
+    }
+    return {
+      kind: "pairing.approve",
+      method: "channel.pair.approve",
+      channel,
+      code: positional[0] ?? "",
+      accountId,
+    };
+  }
+
+  if (positional.length === 2) {
+    return {
+      kind: "pairing.approve",
+      method: "channel.pair.approve",
+      channel: normalizePairingChannel(positional[0] ?? ""),
+      code: positional[1] ?? "",
+      accountId,
+    };
+  }
+
+  if (positional.length === 1) {
+    return null;
+  }
+
+  throw new Error("openclaw pairing approve requires <channel> <code>");
+}
+
+function tryMapDirectoryGroupsList(tokens: string[]): CommandMapping | null {
+  let channel: string | undefined;
+  let accountId: string | undefined;
+  let query: string | undefined;
+  let limit: number | undefined;
+
+  for (let index = 4; index < tokens.length; index += 1) {
+    const token = tokens[index] ?? "";
+    if (!token || isJsonFlag(token)) {
+      continue;
+    }
+    if (token.startsWith("--channel")) {
+      const resolved = readRequiredLongOption(tokens, index, "--channel");
+      channel = normalizePairingChannel(resolved.value);
+      index = resolved.nextIndex;
+      continue;
+    }
+    if (token.startsWith("--account")) {
+      const resolved = readRequiredLongOption(tokens, index, "--account");
+      accountId = resolved.value.trim();
+      index = resolved.nextIndex;
+      continue;
+    }
+    if (token.startsWith("--query")) {
+      const resolved = readRequiredLongOption(tokens, index, "--query");
+      query = resolved.value;
+      index = resolved.nextIndex;
+      continue;
+    }
+    if (token.startsWith("--limit")) {
+      const resolved = readRequiredLongOption(tokens, index, "--limit");
+      limit = parseNonNegativeInteger(resolved.value, "--limit");
+      index = resolved.nextIndex;
+      continue;
+    }
+    return null;
+  }
+
+  if (!channel) {
+    throw new Error("openclaw directory groups list requires --channel");
+  }
+
+  return {
+    kind: "directory.groups.list",
+    method: "channel.directory.groups.list",
+    channel,
+    accountId,
+    query,
+    limit,
   };
 }
 
@@ -657,91 +820,122 @@ function mapCommand(tokens: string[]): CommandMapping {
   }
 
   if (namespace === "gateway" && action === "restart") {
-    return tryMapGatewayRestart(tokens) ?? { kind: "command.forward", argv: tokens };
+    const mapped = tryMapGatewayRestart(tokens);
+    if (mapped) {
+      return mapped;
+    }
+    throw createUnsupportedCommandError(tokens.join(" "));
   }
 
   if (namespace === "devices") {
     if (action === "list") {
-      return tryMapDevicesList(tokens) ?? { kind: "command.forward", argv: tokens };
+      const mapped = tryMapDevicesList(tokens);
+      if (mapped) {
+        return mapped;
+      }
+      throw createUnsupportedCommandError(tokens.join(" "));
     }
 
     if (action === "approve") {
-      return tryMapDevicesApprove(tokens) ?? { kind: "command.forward", argv: tokens };
+      const mapped = tryMapDevicesApprove(tokens);
+      if (mapped) {
+        return mapped;
+      }
+      throw createUnsupportedCommandError(tokens.join(" "));
     }
 
     if (action === "reject") {
-      return tryMapDevicesReject(tokens) ?? { kind: "command.forward", argv: tokens };
+      const mapped = tryMapDevicesReject(tokens);
+      if (mapped) {
+        return mapped;
+      }
+      throw createUnsupportedCommandError(tokens.join(" "));
     }
 
     if (action === "remove") {
-      return tryMapDevicesRemove(tokens) ?? { kind: "command.forward", argv: tokens };
+      const mapped = tryMapDevicesRemove(tokens);
+      if (mapped) {
+        return mapped;
+      }
+      throw createUnsupportedCommandError(tokens.join(" "));
     }
 
     if (action === "clear") {
-      return tryMapDevicesClear(tokens) ?? { kind: "command.forward", argv: tokens };
+      const mapped = tryMapDevicesClear(tokens);
+      if (mapped) {
+        return mapped;
+      }
+      throw createUnsupportedCommandError(tokens.join(" "));
     }
 
     if (action === "rotate") {
-      return tryMapDevicesRotate(tokens) ?? { kind: "command.forward", argv: tokens };
+      const mapped = tryMapDevicesRotate(tokens);
+      if (mapped) {
+        return mapped;
+      }
+      throw createUnsupportedCommandError(tokens.join(" "));
     }
 
     if (action === "revoke") {
-      return tryMapDevicesRevoke(tokens) ?? { kind: "command.forward", argv: tokens };
+      const mapped = tryMapDevicesRevoke(tokens);
+      if (mapped) {
+        return mapped;
+      }
+      throw createUnsupportedCommandError(tokens.join(" "));
     }
   }
 
   if (namespace === "nodes") {
     if (action === "pending") {
-      return tryMapNodesPending(tokens) ?? { kind: "command.forward", argv: tokens };
+      const mapped = tryMapNodesPending(tokens);
+      if (mapped) {
+        return mapped;
+      }
+      throw createUnsupportedCommandError(tokens.join(" "));
     }
 
     if (action === "approve") {
-      return tryMapNodesApprove(tokens) ?? { kind: "command.forward", argv: tokens };
+      const mapped = tryMapNodesApprove(tokens);
+      if (mapped) {
+        return mapped;
+      }
+      throw createUnsupportedCommandError(tokens.join(" "));
     }
 
     if (action === "reject") {
-      return tryMapNodesReject(tokens) ?? { kind: "command.forward", argv: tokens };
+      const mapped = tryMapNodesReject(tokens);
+      if (mapped) {
+        return mapped;
+      }
+      throw createUnsupportedCommandError(tokens.join(" "));
     }
 
     if (action === "rename") {
-      return tryMapNodesRename(tokens) ?? { kind: "command.forward", argv: tokens };
+      const mapped = tryMapNodesRename(tokens);
+      if (mapped) {
+        return mapped;
+      }
+      throw createUnsupportedCommandError(tokens.join(" "));
     }
   }
 
-  return {
-    kind: "command.forward",
-    argv: tokens,
-  };
-}
-
-function resolveTimeoutMs(timeoutMs: number | undefined): number {
-  if (typeof timeoutMs === "number" && Number.isFinite(timeoutMs) && timeoutMs > 0) {
-    return Math.floor(timeoutMs);
-  }
-  return DEFAULT_COMMAND_TIMEOUT_MS;
-}
-
-async function executeForwardedCommand(
-  argv: string[],
-  timeoutMs: number | undefined,
-): Promise<unknown> {
-  const result = await runPluginCommandWithTimeout({
-    argv,
-    timeoutMs: resolveTimeoutMs(timeoutMs),
-  });
-  if (result.code !== 0) {
-    throw new Error((result.stderr || result.stdout || `command failed (${result.code})`).trim());
+  if (namespace === "pairing" && action === "approve") {
+    const mapped = tryMapPairingApprove(tokens);
+    if (mapped) {
+      return mapped;
+    }
+    throw createUnsupportedCommandError(tokens.join(" "));
   }
 
-  const stdout = result.stdout.trim();
-  if (!stdout) {
-    return {};
+  if (namespace === "directory" && action === "groups" && tokens[3]?.toLowerCase() === "list") {
+    const mapped = tryMapDirectoryGroupsList(tokens);
+    if (mapped) {
+      return mapped;
+    }
+    throw createUnsupportedCommandError(tokens.join(" "));
   }
-  try {
-    return JSON.parse(stdout);
-  } catch {
-    return stdout;
-  }
+
+  throw createUnsupportedCommandError(tokens.join(" "));
 }
 
 function requestInProcessGatewayRestart(): {
@@ -820,10 +1014,11 @@ export async function executeBotmaxGatewayCommand(params: {
       }
       data = approved;
     } else if (mapped.kind === "devices.reject") {
-      data = await executeForwardedCommand(
-        ["openclaw", "devices", "reject", mapped.requestId, "--json"],
-        params.timeoutMs,
-      );
+      const rejected = await rejectDevicePairingLocally(mapped.requestId);
+      if (!rejected) {
+        throw new Error(`pairing request not found: ${mapped.requestId}`);
+      }
+      data = rejected;
     } else if (mapped.kind === "devices.remove") {
       const removed = await removePairedDeviceLocally(mapped.deviceId);
       if (!removed) {
@@ -882,8 +1077,36 @@ export async function executeBotmaxGatewayCommand(params: {
         query: mapped.nodeQuery,
         displayName: mapped.displayName,
       });
+    } else if (mapped.kind === "pairing.approve") {
+      const approved = await approveChannelPairingCode({
+        channel: mapped.channel,
+        code: mapped.code,
+        ...(mapped.accountId ? { accountId: mapped.accountId } : {}),
+      });
+      if (!approved) {
+        throw new Error(`No pending pairing request found for code: ${mapped.code}`);
+      }
+      data = {
+        channel: mapped.channel,
+        ...(mapped.accountId ? { accountId: mapped.accountId } : {}),
+        id: approved.id,
+        entry: approved.entry,
+      };
+    } else if (mapped.kind === "directory.groups.list") {
+      if (mapped.channel !== "feishu") {
+        throw new Error(
+          `Botmax only supports directory groups list for channel feishu; received ${mapped.channel}`,
+        );
+      }
+      data = await listFeishuDirectoryGroupsLive({
+        cfg: loadConfig(),
+        ...(mapped.accountId ? { accountId: mapped.accountId } : {}),
+        ...(mapped.query ? { query: mapped.query } : {}),
+        ...(typeof mapped.limit === "number" ? { limit: mapped.limit } : {}),
+      });
     } else {
-      data = await executeForwardedCommand(mapped.argv, params.timeoutMs);
+      const _exhaustive: never = mapped;
+      throw new Error(`Unsupported mapped command: ${String(_exhaustive)}`);
     }
 
     return {

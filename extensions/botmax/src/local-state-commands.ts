@@ -398,6 +398,25 @@ export async function clearDevicePairingLocally(params: {
   });
 }
 
+export async function rejectDevicePairingLocally(
+  requestId: string,
+): Promise<{ requestId: string; deviceId: string } | null> {
+  return await withStateLock(async () => {
+    const state = await loadDeviceState();
+    const pending = state.pendingById[normalizeText(requestId)];
+    if (!pending) {
+      return null;
+    }
+
+    delete state.pendingById[normalizeText(requestId)];
+    await persistDeviceState(state);
+    return {
+      requestId: normalizeText(requestId),
+      deviceId: pending.deviceId,
+    };
+  });
+}
+
 export async function rotateDeviceTokenLocally(params: {
   deviceId: string;
   role: string;
