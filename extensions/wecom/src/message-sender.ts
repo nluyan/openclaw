@@ -62,6 +62,41 @@ export async function sendWeComReply(params: {
     throw new Error("WSClient not connected");
   }
 
+  const body = frame.body as {
+    msgtype?: string;
+    chatid?: string;
+    from?: {
+      userid?: string;
+    };
+  };
+
+  // 事件回调（aibot_event_callback）没有可用于 replyStream 的有效 req_id，
+  // 对该场景改用主动发送 sendMessage，避免 846605 invalid req_id。
+  if (body.msgtype === "event") {
+    // 中间帧（thinking / 流式增量）直接跳过，仅在最终帧主动发一次文本。
+    if (!finish) {
+      runtime.log?.(`[plugin -> server] skip non-final stream for event callback, streamId=${streamId}`);
+      return streamId;
+    }
+
+    const chatId = body.chatid || body.from?.userid;
+    if (!chatId) {
+      throw new Error("Missing chatId for event callback reply");
+    }
+
+    await withTimeout(
+      wsClient.sendMessage(chatId, {
+        msgtype: "markdown",
+        markdown: { content: text },
+      }),
+      REPLY_SEND_TIMEOUT_MS,
+      `Event reply send timed out (streamId=${streamId})`,
+    );
+    runtime.log?.(`[plugin -> server] event-active-send chatId=${chatId}, finish=${finish}`);
+    return streamId;
+  }
+
+  // 非事件消息，继续使用 replyStream（被动回复）
   // 使用 SDK 的 replyStream 方法发送消息，带超时保护
   try {
     await withTimeout(

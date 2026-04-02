@@ -21,7 +21,7 @@ import * as path from "path";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/core";
 import type { RuntimeEnv } from "openclaw/plugin-sdk/runtime-env";
 import { WSClient, generateReqId, WSAuthFailureError, WSReconnectExhaustedError } from "@wecom/aibot-node-sdk";
-import type { WsFrame, Logger } from "@wecom/aibot-node-sdk";
+import type { WsFrame, Logger, TemplateCard } from "@wecom/aibot-node-sdk";
 import { getWeComRuntime } from "./runtime.js";
 import { getDefaultMediaLocalRoots } from "./openclaw-compat.js";
 import type { ResolvedWeComAccount, WeComConfig } from "./utils.js";
@@ -42,6 +42,7 @@ import { parseMessageContent, type MessageBody } from "./message-parser.js";
 import { sendWeComReply, StreamExpiredError } from "./message-sender.js";
 import { downloadAndSaveImages, downloadAndSaveFiles } from "./media-handler.js";
 import { uploadAndSendMedia } from "./media-uploader.js";
+import { extractTemplateCards, maskTemplateCardBlocks } from "./template-card-parser.js";
 import { checkGroupPolicy } from "./group-policy.js";
 import { checkDmPolicy } from "./dm-policy.js";
 import {
@@ -56,6 +57,197 @@ import {
 } from "./state-manager.js";
 
 import { PLUGIN_VERSION } from "./version.js";
+
+/**
+ * 去除文本中的 `<think>...</think>` 标签（支持跨行），返回剩余可见文本。
+ * 用于判断大模型回复中是否包含实际用户可见内容（而非仅有 thinking 推理过程）。
+ */
+function stripThinkTags(text: string): string {
+  return text;
+  // return text.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+}
+
+// ============================================================================
+// 模板卡片缓存与事件更新
+// ============================================================================
+
+interface SentTemplateCardCacheEntry {
+  templateCard: TemplateCard;
+  createdAt: number;
+}
+
+const sentTemplateCardByTaskId = new Map<string, SentTemplateCardCacheEntry>();
+const TEMPLATE_CARD_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const TEMPLATE_CARD_CACHE_MAX_SIZE = 300;
+
+function getTemplateCardCacheKey(accountId: string, taskId: string): string {
+  return `${accountId}:${taskId}`;
+}
+
+function pruneTemplateCardCache(): void {
+  const now = Date.now();
+
+  for (const [key, entry] of sentTemplateCardByTaskId) {
+    if (now - entry.createdAt >= TEMPLATE_CARD_CACHE_TTL_MS) {
+      sentTemplateCardByTaskId.delete(key);
+    }
+  }
+
+  if (sentTemplateCardByTaskId.size <= TEMPLATE_CARD_CACHE_MAX_SIZE) {
+    return;
+  }
+
+  const sortedEntries = [...sentTemplateCardByTaskId.entries()].sort(
+    (a, b) => a[1].createdAt - b[1].createdAt,
+  );
+  const removeCount = sentTemplateCardByTaskId.size - TEMPLATE_CARD_CACHE_MAX_SIZE;
+  for (const [key] of sortedEntries.slice(0, removeCount)) {
+    sentTemplateCardByTaskId.delete(key);
+  }
+}
+
+function cloneTemplateCard(card: TemplateCard): TemplateCard {
+  return JSON.parse(JSON.stringify(card)) as TemplateCard;
+}
+
+function saveTemplateCardToCache(params: {
+  accountId: string;
+  templateCard: TemplateCard;
+  runtime: RuntimeEnv;
+}): void {
+  const { accountId, templateCard, runtime } = params;
+  const taskId = templateCard.task_id;
+  if (!taskId) {
+    runtime.log?.("[wecom][template-card] Skip cache: template card has no task_id");
+    return;
+  }
+
+  sentTemplateCardByTaskId.set(getTemplateCardCacheKey(accountId, taskId), {
+    templateCard: cloneTemplateCard(templateCard),
+    createdAt: Date.now(),
+  });
+  pruneTemplateCardCache();
+}
+
+function getTemplateCardFromCache(accountId: string, taskId: string): TemplateCard | undefined {
+  pruneTemplateCardCache();
+  const cached = sentTemplateCardByTaskId.get(getTemplateCardCacheKey(accountId, taskId));
+  if (!cached) {
+    return undefined;
+  }
+  return cloneTemplateCard(cached.templateCard);
+}
+
+type TemplateCardEventPayload = NonNullable<NonNullable<MessageBody["event"]>["template_card_event"]>;
+
+function buildSelectedOptionMap(templateCardEvent?: TemplateCardEventPayload): Map<string, string[]> {
+  const selectedMap = new Map<string, string[]>();
+  const selectedItems = templateCardEvent?.selected_items?.selected_item ?? [];
+
+  for (const item of selectedItems) {
+    const questionKey = item.question_key?.trim();
+    if (!questionKey) {
+      continue;
+    }
+    const optionIds = item.option_ids?.option_id?.filter(Boolean) ?? [];
+    selectedMap.set(questionKey, optionIds);
+  }
+
+  return selectedMap;
+}
+
+function applySelectedStateToTemplateCard(params: {
+  templateCard: TemplateCard;
+  selectedMap: Map<string, string[]>;
+  templateCardEvent?: TemplateCardEventPayload;
+}): TemplateCard {
+  const { templateCard, selectedMap, templateCardEvent } = params;
+  const nextCard = cloneTemplateCard(templateCard);
+
+  if (templateCardEvent?.task_id) {
+    nextCard.task_id = templateCardEvent.task_id;
+  }
+  if (templateCardEvent?.card_type) {
+    nextCard.card_type = templateCardEvent.card_type;
+  }
+
+  // 交互完成后将提交按钮文案更新为已提交，提升用户感知
+  if (nextCard.submit_button?.text) {
+    nextCard.submit_button.text = "已提交";
+  }
+
+  if (nextCard.checkbox?.question_key) {
+    const selectedIds = selectedMap.get(nextCard.checkbox.question_key) ?? [];
+    nextCard.checkbox.disable = true;
+    if (Array.isArray(nextCard.checkbox.option_list)) {
+      nextCard.checkbox.option_list = nextCard.checkbox.option_list.map((option) => ({
+        ...option,
+        is_checked: selectedIds.includes(option.id),
+      }));
+    }
+  }
+
+  if (Array.isArray(nextCard.select_list)) {
+    nextCard.select_list = nextCard.select_list.map((selection) => {
+      const selectedIds = selectedMap.get(selection.question_key) ?? [];
+      return {
+        ...selection,
+        disable: true,
+        selected_id: selectedIds[0] ?? selection.selected_id,
+      };
+    });
+  }
+
+  if (nextCard.button_selection?.question_key) {
+    const selectedIds = selectedMap.get(nextCard.button_selection.question_key) ?? [];
+    nextCard.button_selection.disable = true;
+    if (selectedIds[0]) {
+      nextCard.button_selection.selected_id = selectedIds[0];
+    }
+  }
+
+  return nextCard;
+}
+
+async function updateTemplateCardOnEvent(params: {
+  frame: WsFrame;
+  accountId: string;
+  runtime: RuntimeEnv;
+  wsClient: WSClient;
+}): Promise<void> {
+  const { frame, accountId, runtime, wsClient } = params;
+  const body = frame.body as MessageBody;
+  const templateCardEvent = body.event?.template_card_event;
+  const taskId = templateCardEvent?.task_id;
+
+  if (!taskId) {
+    runtime.log?.(`[${accountId}] [template-card-update] Skip update: missing task_id in callback`);
+    return;
+  }
+
+  const cachedCard = getTemplateCardFromCache(accountId, taskId);
+  if (!cachedCard) {
+    runtime.log?.(`[${accountId}] [template-card-update] Skip update: task_id=${taskId} not found in cache`);
+    return;
+  }
+
+  const selectedMap = buildSelectedOptionMap(templateCardEvent);
+  const updatedCard = applySelectedStateToTemplateCard({
+    templateCard: cachedCard,
+    selectedMap,
+    templateCardEvent,
+  });
+
+  await wsClient.updateTemplateCard(frame, updatedCard, [body.from.userid]);
+  runtime.log?.(`[${accountId}] [template-card-update] Updated card by task_id=${taskId}`);
+
+  // 将更新后的卡片写回缓存，后续多次点击时状态保持一致
+  saveTemplateCardToCache({
+    accountId,
+    templateCard: updatedCard,
+    runtime,
+  });
+}
 
 // ============================================================================
 // 媒体本地路径白名单扩展
@@ -327,6 +519,7 @@ async function sendMediaBatch(
  *    替换掉 thinking 动画，否则 thinking 会一直残留。
  *
  * 关闭策略（按优先级）：
+ * 0. [新增] 有模板卡片代码块 → 提取卡片并主动发送，用剩余文本关闭流
  * 1. 有可见文本 → 用完整文本关闭
  * 2. 有媒体成功发送（通过 deliver 回调） → 用友好提示"文件已发送"
  * 3. 媒体发送失败 → 直接用错误摘要替换 thinking
@@ -340,12 +533,46 @@ async function sendMediaBatch(
  *   改用 wsClient.sendMessage 主动发送完整文本。
  */
 async function finishThinkingStream(ctx: DeliverContext): Promise<void> {
-  const {wsClient, frame, state, account, runtime} = ctx;
+  const { wsClient, frame, state, account, runtime } = ctx;
   const body = frame.body as MessageBody;
   const chatId = body.chatid || body.from.userid;
-  let finishText: string = state.accumulatedText;
+  const visibleText = stripThinkTags(state.accumulatedText);
 
-  if (state.hasMedia) {
+  // ── 模板卡片检测与发送 ──────────────────────────────────────────────
+  // 在确定 finishText 之前，先检查累积文本中是否包含模板卡片 JSON 代码块。
+  // 若检测到合法卡片，通过 sendMessage 主动发送后，用剩余文本关闭流。
+  if (visibleText) {
+    runtime.log?.(`[wecom][template-card] finishThinkingStream: visibleText exists, length=${visibleText.length}, running extractTemplateCards...`);
+    const logFn = (...args: any[]): void => {
+      runtime.log?.(...args);
+    };
+    const { cards, remainingText } = extractTemplateCards(state.accumulatedText, logFn);
+
+    runtime.log?.(`[wecom][template-card] finishThinkingStream: extractTemplateCards result — cards=${cards.length}, remainingTextLength=${remainingText.length}`);
+
+    if (cards.length > 0) {
+      runtime.log?.(`[wecom][template-card] finishThinkingStream: ${cards.length} card(s) detected, card_types=[${cards.map(c => c.cardType).join(", ")}]`);
+      await sendTemplateCards(ctx, cards);
+
+      // 用剩余文本关闭流（可能为空）
+      const trimmedRemaining = stripThinkTags(remainingText);
+      const finishText = trimmedRemaining
+        ? remainingText
+        : (state.hasTemplateCard ? "📋 卡片消息已发送。" : "");
+      runtime.log?.(`[wecom][template-card] finishThinkingStream: closing stream with finishText="${finishText.slice(0, 100)}...", hasTemplateCard=${state.hasTemplateCard}`);
+      await sendWeComReply({ wsClient, frame, text: finishText, runtime, finish: true, streamId: state.streamId });
+      return;
+    }
+  } else {
+    runtime.log?.(`[wecom][template-card] finishThinkingStream: no visibleText, skipping template card extraction`);
+  }
+  // ── 模板卡片检测结束 ────────────────────────────────────────────────
+
+  let finishText: string = state.accumulatedText;
+  if (visibleText) {
+    // 有可见文本：用完整文本关闭流（覆盖 thinking 为真实内容）
+    finishText = state.accumulatedText;
+  } else if (state.hasMedia) {
     if (state.hasMediaFailed && state.mediaErrorSummary) {
       // 媒体成功发送：用友好提示告知用户
       finishText = finishText ? `${finishText}\n\n${state.mediaErrorSummary}` : state.mediaErrorSummary;
@@ -378,6 +605,47 @@ async function finishThinkingStream(ctx: DeliverContext): Promise<void> {
         msgtype: "markdown",
         markdown: { content: finishText },
       });
+    }
+  }
+}
+
+/**
+ * 逐个发送已提取的模板卡片（通过 wsClient.sendMessage 主动推送）
+ *
+ * 发送失败不阻塞流程，仅记录错误日志。
+ */
+async function sendTemplateCards(
+  ctx: DeliverContext,
+  cards: import("./interface.js").ExtractedTemplateCard[],
+): Promise<void> {
+  const { wsClient, frame, state, runtime, account } = ctx;
+  const body = frame.body as MessageBody;
+  const chatId = body.chatid || body.from.userid;
+
+  for (const card of cards) {
+    try {
+      runtime.log?.(`[wecom][template-card] Sending card_type=${card.cardType} to chatId=${chatId}`);
+
+      const rawTemplateCard = card.cardJson as Record<string, unknown>;
+      if (typeof rawTemplateCard.card_type !== "string") {
+        runtime.error?.("[wecom][template-card] Skip sending invalid card: missing card_type");
+        continue;
+      }
+
+      const templateCard = rawTemplateCard as unknown as TemplateCard;
+      await wsClient.sendMessage(chatId, {
+        msgtype: "template_card",
+        template_card: templateCard,
+      });
+      state.hasTemplateCard = true;
+      saveTemplateCardToCache({
+        accountId: account.accountId,
+        templateCard,
+        runtime,
+      });
+      runtime.log?.(`[wecom][template-card] Card sent successfully: card_type=${card.cardType}`);
+    } catch (err) {
+      runtime.error?.(`[wecom][template-card] Failed to send card: card_type=${card.cardType}, error=${JSON.stringify(err)}`);
     }
   }
 }
@@ -464,9 +732,15 @@ async function routeAndDispatchMessage(params: {
           }
 
           // 中间帧：有可见文本时流式更新（流式过期后跳过，等 deliver 完成后主动发送）
+          // 使用 maskTemplateCardBlocks 遮罩正在构建中的模板卡片代码块，
+          // 避免 JSON 源码在流式输出过程中暴露给终端用户
           if (info.kind !== "final" && state.accumulatedText && !state.streamExpired) {
             try {
-              await sendWeComReply({ wsClient, frame, text: state.accumulatedText, runtime, finish: false, streamId: state.streamId });
+              const displayText = maskTemplateCardBlocks(state.accumulatedText, (...args: any[]) => runtime.log?.(...args));
+              if (displayText !== state.accumulatedText) {
+                runtime.log?.(`[wecom][template-card] Mid-frame masked: original=${state.accumulatedText.length}chars, masked=${displayText.length}chars`);
+              }
+              await sendWeComReply({ wsClient, frame, text: displayText, runtime, finish: false, streamId: state.streamId });
             } catch (err) {
               if (err instanceof StreamExpiredError) {
                 state.streamExpired = true;
@@ -672,6 +946,7 @@ export async function monitorWeComProvider(options: WeComMonitorOptions): Promis
   const { account, config, runtime, abortSignal, setStatus } = options;
 
   runtime.log?.(`[${account.accountId}] [${PLUGIN_VERSION}] Initializing WSClient with SDK...`);
+  runtime.error?.(`[${account.accountId}] [diag] monitor boot marker: build=20260325-event-debug-1`);
 
   // 启动消息状态定期清理
   startMessageStateCleanup();
@@ -728,6 +1003,7 @@ export async function monitorWeComProvider(options: WeComMonitorOptions): Promis
     wsClient.on("disconnected", (reason) => {
       runtime.log?.(`[${account.accountId}] WebSocket disconnected: ${reason}`);
     });
+
 
     // 监听被踢下线事件（服务端因新连接建立而主动断开旧连接）
     //
@@ -824,7 +1100,7 @@ export async function monitorWeComProvider(options: WeComMonitorOptions): Promis
       }
     });
 
-    // 监听所有消息
+    // 监听普通消息
     wsClient.on("message", async (frame: WsFrame) => {
       try {
         await processWeComMessage({
@@ -838,6 +1114,56 @@ export async function monitorWeComProvider(options: WeComMonitorOptions): Promis
         runtime.error?.(`[${account.accountId}] Failed to process message: ${String(err)}`);
       }
     });
+
+    // 监听所有事件回调（aibot_event_callback）。
+    // 这里使用通用 event 监听，再按 eventtype 分发，兼容不同 SDK 版本在细分事件名上的差异。
+    wsClient.on("event", async (frame: WsFrame) => {
+      try {
+        const eventBody = frame.body as MessageBody;
+        const eventType = eventBody.event?.eventtype;
+        runtime.log?.(
+          `[${account.accountId}] Received event callback: eventtype=${eventType ?? ""}, msgid=${eventBody.msgid ?? ""}`,
+        );
+        runtime.error?.(
+          `[${account.accountId}] [diag] event-listener fired: eventtype=${eventType ?? ""}, msgid=${eventBody.msgid ?? ""}`,
+        );
+
+        if (eventType !== "template_card_event") {
+          return;
+        }
+
+        const templateCardEvent = eventBody.event?.template_card_event;
+        runtime.log?.(
+          `[${account.accountId}] Received template_card_event: event_key=${templateCardEvent?.event_key ?? ""}, task_id=${templateCardEvent?.task_id ?? ""}`,
+        );
+
+        try {
+          await updateTemplateCardOnEvent({
+            frame,
+            accountId: account.accountId,
+            runtime,
+            wsClient,
+          });
+        } catch (updateErr) {
+          runtime.error?.(
+            `[${account.accountId}] [template-card-update] Failed to update template card: ${String(updateErr)}`,
+          );
+        }
+
+        await processWeComMessage({
+          frame,
+          account,
+          config,
+          runtime,
+          wsClient,
+        });
+      } catch (err) {
+        runtime.error?.(`[${account.accountId}] Failed to process template_card_event: ${String(err)}`);
+      }
+    });
+
+    runtime.log?.(`[${account.accountId}] Event listeners attached: message + event(template_card_event)`);
+    runtime.error?.(`[${account.accountId}] [diag] listeners-ready marker`);
 
     // 启动前预热 reqId 缓存，确保完成后再建立连接，避免 getSync 在预热完成前返回 undefined
     warmupReqIdStore(account.accountId, (...args) => runtime.log?.(...args))

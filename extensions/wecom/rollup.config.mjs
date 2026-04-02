@@ -15,22 +15,18 @@ const external = [
 ];
 
 export default [
-  // CJS & ESM 输出
+  // CJS 输出 —— 保留原始文件结构
   {
     input: "index.ts",
-    output: [
-      {
-        file: "dist/index.cjs.js",
-        format: "cjs",
-        sourcemap: true,
-        exports: "named",
-      },
-      {
-        file: "dist/index.esm.js",
-        format: "esm",
-        sourcemap: true,
-      },
-    ],
+    output: {
+      dir: "dist/cjs",
+      format: "cjs",
+      sourcemap: true,
+      exports: "named",
+      preserveModules: true,
+      preserveModulesRoot: ".",
+      entryFileNames: "[name].js",
+    },
     external,
     plugins: [
       resolve({ preferBuiltins: true }),
@@ -38,14 +34,39 @@ export default [
       json(),
       typescript({
         tsconfig: "./tsconfig.json",
-        declaration: true,
-        declarationDir: "./dist",
+        outDir: "./dist/cjs",
+        declaration: false,
+        declarationDir: undefined,
       }),
     ],
   },
-  // 类型声明文件
+  // ESM 输出 —— 保留原始文件结构
   {
-    input: "dist/index.d.ts",
+    input: "index.ts",
+    output: {
+      dir: "dist/esm",
+      format: "esm",
+      sourcemap: true,
+      preserveModules: true,
+      preserveModulesRoot: ".",
+      entryFileNames: "[name].js",
+    },
+    external,
+    plugins: [
+      resolve({ preferBuiltins: true }),
+      commonjs(),
+      json(),
+      typescript({
+        tsconfig: "./tsconfig.json",
+        outDir: "./dist/esm",
+        declaration: true,
+        declarationDir: "./dist/esm/types",
+      }),
+    ],
+  },
+  // 类型声明文件合并
+  {
+    input: "dist/esm/types/index.d.ts",
     output: [{ file: "dist/index.d.ts", format: "esm" }],
     external,
     plugins: [dts()],

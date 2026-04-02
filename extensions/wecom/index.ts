@@ -101,7 +101,8 @@ const plugin = {
       }
       return {
         appendSystemContext: [
-          "重要：涉及发送图片/视频/语音/文件给用户时，请务必使用 `MEDIA：` 指令。详见  wecom-send-media 这个 skill（技能）。"
+          "重要：涉及发送图片/视频/语音/文件给用户时，请务必使用 `MEDIA:` 指令。详见  wecom-send-media 这个 skill（技能）。",
+          "重要：当需要向用户发送结构化卡片消息（如通知、投票、按钮选择等）时，请在回复中直接输出 JSON 代码块（```json ... ```），其中 card_type 字段标明卡片类型。详见 wecom-send-template-card 技能。"
         ].join("\n"),
       };
     });

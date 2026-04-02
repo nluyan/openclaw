@@ -12,6 +12,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as os from "node:os";
 import { fileURLToPath } from "node:url";
+import { resolveStateDir } from "./state-dir-resolve";
 
 export const DEFAULT_ACCOUNT_ID = "default";
 
@@ -406,13 +407,6 @@ export function addWildcardAllowFrom(allowFrom: string[]): string[] {
 // ============================================================================
 // getDefaultMediaLocalRoots —— 获取默认媒体本地路径白名单
 // ============================================================================
-
-/** 解析 openclaw 状态目录 */
-function resolveStateDir(): string {
-  const stateOverride = process.env.OPENCLAW_STATE_DIR?.trim() || process.env.CLAWDBOT_STATE_DIR?.trim();
-  if (stateOverride) return stateOverride;
-  return path.join(os.homedir(), ".openclaw");
-}
 
 /**
  * 获取默认媒体本地路径白名单（兼容入口）

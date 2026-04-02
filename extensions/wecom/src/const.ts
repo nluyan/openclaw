@@ -133,3 +133,16 @@ export const CMD_ENTER_EVENT_REPLY = "ww_ai_robot_enter_event";
 
 /** WSClient scene 参数：企微 OpenClaw 场景 */
 export const SCENE_WECOM_OPENCLAW = 1;
+
+// ============================================================================
+// 模板卡片配置
+// ============================================================================
+
+/** 合法的模板卡片 card_type 列表 */
+export const VALID_CARD_TYPES: string[] = [
+  "text_notice",
+  "news_notice",
+  "button_interaction",
+  "vote_interaction",
+  "multiple_interaction",
+];
