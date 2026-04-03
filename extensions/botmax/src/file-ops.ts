@@ -1,5 +1,5 @@
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { lstat, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { dirname, extname } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import {
   getRuntimeConfigSnapshot,
@@ -27,8 +27,31 @@ export type BotmaxFileWriteResult = {
   sizeBytes: number;
 };
 
+export type BotmaxFileEntryType = "file" | "directory";
+
+export type BotmaxFileListEntry = {
+  name: string;
+  path: string;
+  entryType: BotmaxFileEntryType;
+  sizeBytes: number | null;
+  modifiedAt: string;
+  extension: string | null;
+};
+
+export type BotmaxFileListResult = {
+  path: string;
+  parentPath: string | null;
+  entries: BotmaxFileListEntry[];
+};
+
+export type BotmaxDirectoryCreateResult = {
+  path: string;
+  entryType: "directory";
+};
+
 export type BotmaxFileDeleteResult = {
   path: string;
+  entryType: BotmaxFileEntryType;
   encoding: BotmaxFileEncoding;
   sizeBytes: number;
 };
@@ -392,6 +415,68 @@ export async function readBotmaxFile(params: {
   }
 }
 
+export async function listBotmaxFiles(params: {
+  path: string;
+  includeHidden?: boolean;
+}): Promise<BotmaxFileListResult> {
+  const normalizedPath = requirePath(params.path);
+  const includeHidden = params.includeHidden ?? true;
+
+  try {
+    const directoryStats = await lstat(normalizedPath);
+    if (!directoryStats.isDirectory()) {
+      throw new BotmaxFileOperationError(
+        "NOT_DIRECTORY",
+        `path is not a directory: ${normalizedPath}`,
+      );
+    }
+
+    const rawEntries = await readdir(normalizedPath, { withFileTypes: true });
+    const entries = await Promise.all(
+      rawEntries
+        .filter((entry) => includeHidden || !entry.name.startsWith("."))
+        .map(async (entry) => {
+          const entryPath = `${normalizedPath.replace(/[\\/]+$/, "")}/${entry.name}`;
+          const entryStats = await lstat(entryPath);
+          const entryType: BotmaxFileEntryType = entryStats.isDirectory()
+            ? "directory"
+            : "file";
+
+          return {
+            name: entry.name,
+            path: entryPath,
+            entryType,
+            sizeBytes: entryType === "directory" ? null : entryStats.size,
+            modifiedAt: entryStats.mtime.toISOString(),
+            extension:
+              entryType === "directory"
+                ? null
+                : normalizeFileExtension(entry.name),
+          } satisfies BotmaxFileListEntry;
+        }),
+    );
+
+    entries.sort((left, right) => {
+      if (left.entryType !== right.entryType) {
+        return left.entryType === "directory" ? -1 : 1;
+      }
+      return left.name.localeCompare(right.name, undefined, {
+        numeric: true,
+        sensitivity: "base",
+      });
+    });
+
+    const parentPath = dirname(normalizedPath);
+    return {
+      path: normalizedPath,
+      parentPath: parentPath === normalizedPath ? null : parentPath,
+      entries,
+    };
+  } catch (error) {
+    throw mapFileOperationError(normalizedPath, error);
+  }
+}
+
 export async function writeBotmaxFile(params: {
   path: string;
   content: string;
@@ -447,7 +532,26 @@ export async function writeBotmaxFile(params: {
   }
 }
 
-export async function deleteBotmaxFile(params: {
+export async function createBotmaxDirectory(params: {
+  path: string;
+  recursive?: boolean;
+}): Promise<BotmaxDirectoryCreateResult> {
+  const normalizedPath = requirePath(params.path);
+
+  try {
+    await mkdir(normalizedPath, {
+      recursive: params.recursive ?? true,
+    });
+    return {
+      path: normalizedPath,
+      entryType: "directory",
+    };
+  } catch (error) {
+    throw mapFileOperationError(normalizedPath, error);
+  }
+}
+
+export async function deleteBotmaxPath(params: {
   path: string;
   encoding?: string;
 }): Promise<BotmaxFileDeleteResult> {
@@ -455,11 +559,19 @@ export async function deleteBotmaxFile(params: {
   const encoding = normalizeBotmaxFileEncoding(params.encoding);
 
   try {
-    await unlink(normalizedPath);
+    const stats = await lstat(normalizedPath);
+    const entryType: BotmaxFileEntryType = stats.isDirectory()
+      ? "directory"
+      : "file";
+    await rm(normalizedPath, {
+      recursive: entryType === "directory",
+      force: false,
+    });
     return {
       path: normalizedPath,
+      entryType,
       encoding,
-      sizeBytes: 0,
+      sizeBytes: entryType === "directory" ? 0 : stats.size,
     };
   } catch (error) {
     throw mapFileOperationError(normalizedPath, error);
@@ -512,6 +624,11 @@ function decodeBase64(content: string): Buffer {
   return buffer;
 }
 
+function normalizeFileExtension(name: string): string | null {
+  const extension = extname(name).trim().toLowerCase();
+  return extension || null;
+}
+
 function mapFileOperationError(
   path: string,
   error: unknown,
@@ -544,6 +661,18 @@ function mapFileOperationError(
     return new BotmaxFileOperationError(
       "IS_DIRECTORY",
       `path is a directory: ${path}`,
+    );
+  }
+  if (code === "ENOTDIR") {
+    return new BotmaxFileOperationError(
+      "NOT_DIRECTORY",
+      `path is not a directory: ${path}`,
+    );
+  }
+  if (code === "EEXIST") {
+    return new BotmaxFileOperationError(
+      "PATH_ALREADY_EXISTS",
+      `path already exists: ${path}`,
     );
   }
 

@@ -527,7 +527,7 @@
       "properties": {
         "operation": {
           "type": "string",
-          "enum": ["read", "write"]
+          "enum": ["read", "list", "write", "mkdir", "delete"]
         },
         "path": {
           "$ref": "#/$defs/nonEmptyString"
@@ -539,6 +539,12 @@
           "type": "string"
         },
         "ensureDirectory": {
+          "type": "boolean"
+        },
+        "includeHidden": {
+          "type": "boolean"
+        },
+        "recursive": {
           "type": "boolean"
         }
       }
@@ -739,6 +745,114 @@
         }
       }
     },
+    "fileListParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "type", "transport", "origin", "file"],
+      "properties": {
+        "v": {
+          "const": 3
+        },
+        "type": {
+          "const": "file.list"
+        },
+        "transport": {
+          "$ref": "#/$defs/transportContext"
+        },
+        "origin": {
+          "$ref": "#/$defs/originContext"
+        },
+        "file": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/fileContext"
+            },
+            {
+              "properties": {
+                "operation": {
+                  "const": "list"
+                }
+              }
+            }
+          ]
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensionsContext"
+        }
+      }
+    },
+    "directoryCreateParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "type", "transport", "origin", "file"],
+      "properties": {
+        "v": {
+          "const": 3
+        },
+        "type": {
+          "const": "directory.create"
+        },
+        "transport": {
+          "$ref": "#/$defs/transportContext"
+        },
+        "origin": {
+          "$ref": "#/$defs/originContext"
+        },
+        "file": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/fileContext"
+            },
+            {
+              "properties": {
+                "operation": {
+                  "const": "mkdir"
+                }
+              }
+            }
+          ]
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensionsContext"
+        }
+      }
+    },
+    "fileDeleteParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "type", "transport", "origin", "file"],
+      "properties": {
+        "v": {
+          "const": 3
+        },
+        "type": {
+          "const": "file.delete"
+        },
+        "transport": {
+          "$ref": "#/$defs/transportContext"
+        },
+        "origin": {
+          "$ref": "#/$defs/originContext"
+        },
+        "file": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/fileContext"
+            },
+            {
+              "properties": {
+                "operation": {
+                  "const": "delete"
+                }
+              }
+            }
+          ]
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensionsContext"
+        }
+      }
+    },
     "fileResultParams": {
       "type": "object",
       "additionalProperties": false,
@@ -782,7 +896,16 @@
           "$ref": "#/$defs/fileReadParams"
         },
         {
+          "$ref": "#/$defs/fileListParams"
+        },
+        {
           "$ref": "#/$defs/fileWriteParams"
+        },
+        {
+          "$ref": "#/$defs/directoryCreateParams"
+        },
+        {
+          "$ref": "#/$defs/fileDeleteParams"
         },
         {
           "$ref": "#/$defs/fileResultParams"

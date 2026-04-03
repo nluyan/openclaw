@@ -3,7 +3,7 @@
 Status:
 
 - Working contract for the Botmax v3 transport shape.
-- The current runtime uses v3 for BotKeeper <-> OpenClaw text chat, attachments, `command.exec`, `command.result`, `file.read`, `file.write`, and `file.result`.
+- The current runtime uses v3 for BotKeeper <-> OpenClaw text chat, attachments, `command.exec`, `command.result`, `file.read`, `file.list`, `file.write`, `directory.create`, `file.delete`, and `file.result`.
 - Telegram is the first runtime surface with end-to-end media relay enabled.
 - Current runtime details are documented in [botmax.md](./botmax.md).
 
@@ -511,9 +511,9 @@ Notes:
 }
 ```
 
-## `file.read`, `file.write`, and `file.result`
+## `file.read`, `file.list`, `file.write`, `directory.create`, `file.delete`, and `file.result`
 
-These are BotKeeper control-plane RPCs for reading and writing files inside the OpenClaw runtime without shelling out through the command transport.
+These are BotKeeper control-plane RPCs for browsing and mutating files inside the OpenClaw runtime without shelling out through the command transport.
 
 ### `file.read`
 
@@ -530,6 +530,26 @@ These are BotKeeper control-plane RPCs for reading and writing files inside the 
     "operation": "read",
     "path": "/root/.openclaw/config.json",
     "encoding": "utf8"
+  }
+}
+```
+
+### `file.list`
+
+```json
+{
+  "v": 3,
+  "type": "file.list",
+  "transport": {},
+  "origin": {
+    "platform": "internal",
+    "surface": "internal"
+  },
+  "file": {
+    "operation": "list",
+    "path": "/root",
+    "encoding": "utf8",
+    "includeHidden": true
   }
 }
 ```
@@ -555,12 +575,54 @@ These are BotKeeper control-plane RPCs for reading and writing files inside the 
 }
 ```
 
+### `directory.create`
+
+```json
+{
+  "v": 3,
+  "type": "directory.create",
+  "transport": {},
+  "origin": {
+    "platform": "internal",
+    "surface": "internal"
+  },
+  "file": {
+    "operation": "mkdir",
+    "path": "/root/uploads",
+    "encoding": "utf8",
+    "recursive": true
+  }
+}
+```
+
+### `file.delete`
+
+```json
+{
+  "v": 3,
+  "type": "file.delete",
+  "transport": {},
+  "origin": {
+    "platform": "internal",
+    "surface": "internal"
+  },
+  "file": {
+    "operation": "delete",
+    "path": "/root/uploads/old.log",
+    "encoding": "utf8"
+  }
+}
+```
+
 Rules:
 
-- `file.operation` is `read` or `write`.
+- `file.operation` is one of `read`, `list`, `write`, `mkdir`, or `delete`.
 - `file.encoding` currently supports `utf8` and `base64`.
+- `file.list` may request `includeHidden = true` to include dotfiles in directory listings.
 - `file.write` requires `file.content`.
 - `file.write` may request `ensureDirectory = true` so the plugin creates parent directories before writing.
+- `directory.create` may request `recursive = true` so parent directories are created automatically.
+- `file.delete` deletes either a file or a directory tree at the target path.
 
 ### `file.result`
 

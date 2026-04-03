@@ -12,7 +12,9 @@ import {
 } from "./connection.js";
 import {
   BotmaxFileOperationError,
-  deleteBotmaxFile,
+  createBotmaxDirectory,
+  deleteBotmaxPath,
+  listBotmaxFiles,
   readBotmaxFile,
   writeBotmaxFile,
 } from "./file-ops.js";
@@ -340,6 +342,39 @@ export function monitorBotmaxAccount(options: BotmaxMonitorOptions): {
             return;
           }
 
+          if (inbound.kind === "file.list") {
+            void listBotmaxFiles({
+              path: inbound.path,
+              includeHidden: inbound.includeHidden,
+            })
+              .then(async (result) => {
+                await sendBotmaxFileResult({
+                  accountId: account.accountId,
+                  operation: "list",
+                  path: result.path,
+                  encoding: "utf8",
+                  ok: true,
+                  output: `listed ${result.entries.length} item(s) in ${result.path}`,
+                  data: result,
+                  requestId: inbound.requestId,
+                  platform: "internal",
+                  surface: "internal",
+                });
+              })
+              .catch(async (err) => {
+                await sendBotmaxFileErrorResult({
+                  accountId: account.accountId,
+                  operation: "list",
+                  path: inbound.path,
+                  encoding: "utf8",
+                  requestId: inbound.requestId,
+                  runtime,
+                  error: err,
+                });
+              });
+            return;
+          }
+
           if (inbound.kind === "file.write") {
             void writeBotmaxFile({
               path: inbound.path,
@@ -375,8 +410,41 @@ export function monitorBotmaxAccount(options: BotmaxMonitorOptions): {
             return;
           }
 
+          if (inbound.kind === "directory.create") {
+            void createBotmaxDirectory({
+              path: inbound.path,
+              recursive: inbound.recursive,
+            })
+              .then(async (result) => {
+                await sendBotmaxFileResult({
+                  accountId: account.accountId,
+                  operation: "mkdir",
+                  path: result.path,
+                  encoding: "utf8",
+                  ok: true,
+                  output: `created directory ${result.path}`,
+                  data: result,
+                  requestId: inbound.requestId,
+                  platform: "internal",
+                  surface: "internal",
+                });
+              })
+              .catch(async (err) => {
+                await sendBotmaxFileErrorResult({
+                  accountId: account.accountId,
+                  operation: "mkdir",
+                  path: inbound.path,
+                  encoding: "utf8",
+                  requestId: inbound.requestId,
+                  runtime,
+                  error: err,
+                });
+              });
+            return;
+          }
+
           if (inbound.kind === "file.delete") {
-            void deleteBotmaxFile({
+            void deleteBotmaxPath({
               path: inbound.path,
               encoding: inbound.encoding,
             })
@@ -458,7 +526,7 @@ export function monitorBotmaxAccount(options: BotmaxMonitorOptions): {
 
 async function sendBotmaxFileErrorResult(params: {
   accountId: string;
-  operation: "read" | "write" | "delete";
+  operation: "read" | "list" | "write" | "mkdir" | "delete";
   path: string;
   encoding: "utf8" | "base64";
   requestId?: string | number | null;

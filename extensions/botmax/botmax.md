@@ -167,9 +167,9 @@ BotKeeper may still send trusted operational commands such as `openclaw gateway 
 }
 ```
 
-### File Read / Write Frames
+### File Manager Frames
 
-`file.read` and `file.write` are BotKeeper control-plane RPCs for reading and writing files inside the OpenClaw runtime without going through the shell command transport.
+`file.read`, `file.list`, `file.write`, `directory.create`, and `file.delete` are BotKeeper control-plane RPCs for reading, listing, writing, creating, and deleting paths inside the OpenClaw runtime without going through the shell command transport.
 
 ```json
 {
@@ -260,7 +260,7 @@ BotKeeper may still send trusted operational commands such as `openclaw gateway 
 ## Protocol Rules
 
 - BotKeeper <-> OpenClaw only accepts JSON-RPC `botmax.transport` frames with `params.v=3`.
-- OpenClaw accepts `chat.message`, `command.exec`, `file.read`, and `file.write`.
+- OpenClaw accepts `chat.message`, `command.exec`, `file.read`, `file.list`, `file.write`, `directory.create`, and `file.delete`.
 - BotKeeper consumes `chat.message`, `command.result`, and `file.result`.
 - `conversation.id` is the conversation identity for routing and session scoping.
 - `conversation.replyTargetId` is the concrete delivery target for replies and command results.
@@ -272,8 +272,11 @@ BotKeeper may still send trusted operational commands such as `openclaw gateway 
 - For `origin.platform = email`, the Botmax plugin also appends the inbound email subject and parsed `From` fields into OpenClaw's existing `UntrustedContext` metadata block instead of rewriting `Body` or `BodyForCommands`.
 - The Telegram -> BotKeeper bridge currently forwards sender labels, usernames, message ids, reply targets, group titles, and thread ids when Telegram provides them.
 - Botmax chat replies end with the actual outbound message only; the plugin does not append any `<<<done>>>` marker.
-- `file.read` and `file.write` currently support `utf8` and `base64` encodings.
+- `file.read`, `file.write`, and `file.delete` currently support `utf8` and `base64` encodings.
+- `file.list` always uses `utf8` metadata payloads and can include dot-prefixed entries when BotKeeper sets `includeHidden = true`.
 - `file.write` creates parent directories by default when BotKeeper requests `ensureDirectory = true`.
+- `directory.create` creates missing parents when BotKeeper requests `recursive = true`.
+- `file.delete` removes either a single file or a directory tree, and the result payload reports `entryType = "file" | "directory"`.
 
 ## Rich Attachment Model
 

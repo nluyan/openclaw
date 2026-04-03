@@ -197,6 +197,107 @@ describe("botmax message format", () => {
     });
   });
 
+  it("parses v3 file list frames", () => {
+    const frame = JSON.stringify({
+      jsonrpc: "2.0",
+      method: "botmax.transport",
+      id: "file-list-1",
+      params: {
+        v: 3,
+        type: "file.list",
+        transport: {
+          bridge: "botmax",
+          receivedAtMs: 1773561600000,
+        },
+        origin: {
+          platform: "internal",
+          surface: "internal",
+        },
+        file: {
+          operation: "list",
+          path: "/root",
+          encoding: "utf8",
+          includeHidden: true,
+        },
+      },
+    });
+
+    const parsed = parseBotmaxInboundText(frame);
+    expect(parsed).toEqual({
+      kind: "file.list",
+      requestId: "file-list-1",
+      path: "/root",
+      includeHidden: true,
+    });
+  });
+
+  it("parses v3 directory create frames", () => {
+    const frame = JSON.stringify({
+      jsonrpc: "2.0",
+      method: "botmax.transport",
+      id: "mkdir-1",
+      params: {
+        v: 3,
+        type: "directory.create",
+        transport: {
+          bridge: "botmax",
+          receivedAtMs: 1773561600000,
+        },
+        origin: {
+          platform: "internal",
+          surface: "internal",
+        },
+        file: {
+          operation: "mkdir",
+          path: "/root/uploads",
+          encoding: "utf8",
+          recursive: true,
+        },
+      },
+    });
+
+    const parsed = parseBotmaxInboundText(frame);
+    expect(parsed).toEqual({
+      kind: "directory.create",
+      requestId: "mkdir-1",
+      path: "/root/uploads",
+      recursive: true,
+    });
+  });
+
+  it("parses v3 file delete frames", () => {
+    const frame = JSON.stringify({
+      jsonrpc: "2.0",
+      method: "botmax.transport",
+      id: "file-delete-1",
+      params: {
+        v: 3,
+        type: "file.delete",
+        transport: {
+          bridge: "botmax",
+          receivedAtMs: 1773561600000,
+        },
+        origin: {
+          platform: "internal",
+          surface: "internal",
+        },
+        file: {
+          operation: "delete",
+          path: "/root/demo.txt",
+          encoding: "utf8",
+        },
+      },
+    });
+
+    const parsed = parseBotmaxInboundText(frame);
+    expect(parsed).toEqual({
+      kind: "file.delete",
+      requestId: "file-delete-1",
+      path: "/root/demo.txt",
+      encoding: "utf8",
+    });
+  });
+
   it("parses group chat metadata and routes replies to conversation id", () => {
     const frame = JSON.stringify({
       jsonrpc: "2.0",

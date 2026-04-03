@@ -15,7 +15,9 @@ vi.mock("openclaw/plugin-sdk/config-runtime", () => ({
 }));
 
 import {
-  deleteBotmaxFile,
+  createBotmaxDirectory,
+  deleteBotmaxPath,
+  listBotmaxFiles,
   readBotmaxFile,
   refreshBotmaxBindingsAfterWrite,
   syncBotmaxManagedRuntimeConfigMirror,
@@ -123,6 +125,31 @@ describe("botmax file operations", () => {
     await expect(readFile(filePath, "utf8")).resolves.toBe("hello nested");
   });
 
+  it("lists directory entries with directories first", async () => {
+    const dir = await createTempDir();
+    const nestedDir = join(dir, "nested");
+    const filePath = join(dir, "demo.txt");
+    await createBotmaxDirectory({ path: nestedDir });
+    await writeFile(filePath, "hello world", "utf8");
+
+    const result = await listBotmaxFiles({
+      path: dir,
+      includeHidden: true,
+    });
+
+    expect(result.path).toBe(dir);
+    expect(result.parentPath).toBe(join(dir, ".."));
+    expect(result.entries.map((entry) => [entry.name, entry.entryType])).toEqual([
+      ["nested", "directory"],
+      ["demo.txt", "file"],
+    ]);
+    expect(result.entries[1]).toMatchObject({
+      name: "demo.txt",
+      extension: ".txt",
+      sizeBytes: 11,
+    });
+  });
+
   it("rejects invalid base64 writes", async () => {
     const dir = await createTempDir();
     const filePath = join(dir, "demo.bin");
@@ -153,22 +180,61 @@ describe("botmax file operations", () => {
     });
   });
 
+  it("creates directories recursively", async () => {
+    const dir = await createTempDir();
+    const nestedDir = join(dir, "nested", "deep");
+
+    const result = await createBotmaxDirectory({
+      path: nestedDir,
+      recursive: true,
+    });
+
+    expect(result).toEqual({
+      path: nestedDir,
+      entryType: "directory",
+    });
+  });
+
   it("deletes files", async () => {
     const dir = await createTempDir();
     const filePath = join(dir, "delete-me.txt");
     await writeFile(filePath, "bye", "utf8");
 
-    const result = await deleteBotmaxFile({
+    const result = await deleteBotmaxPath({
       path: filePath,
       encoding: "utf8",
     });
 
     expect(result).toEqual({
       path: filePath,
+      entryType: "file",
+      encoding: "utf8",
+      sizeBytes: 3,
+    });
+    await expect(readFile(filePath, "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("deletes directories recursively", async () => {
+    const dir = await createTempDir();
+    const nestedDir = join(dir, "delete-dir");
+    const nestedFile = join(nestedDir, "demo.txt");
+    await createBotmaxDirectory({ path: nestedDir });
+    await writeFile(nestedFile, "bye", "utf8");
+
+    const result = await deleteBotmaxPath({
+      path: nestedDir,
+      encoding: "utf8",
+    });
+
+    expect(result).toEqual({
+      path: nestedDir,
+      entryType: "directory",
       encoding: "utf8",
       sizeBytes: 0,
     });
-    await expect(readFile(filePath, "utf8")).rejects.toMatchObject({
+    await expect(readFile(nestedFile, "utf8")).rejects.toMatchObject({
       code: "ENOENT",
     });
   });

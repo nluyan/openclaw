@@ -7,7 +7,9 @@ const CHAT_MESSAGE_TYPE = "chat.message";
 const COMMAND_EXEC_TYPE = "command.exec";
 const COMMAND_RESULT_TYPE = "command.result";
 const FILE_READ_TYPE = "file.read";
+const FILE_LIST_TYPE = "file.list";
 const FILE_WRITE_TYPE = "file.write";
+const DIRECTORY_CREATE_TYPE = "directory.create";
 const FILE_DELETE_TYPE = "file.delete";
 const FILE_RESULT_TYPE = "file.result";
 const CHAT_TYPE_DIRECT = "direct";
@@ -68,11 +70,13 @@ type BotmaxResultConversationContext = {
 };
 
 type BotmaxFileContext = {
-  operation: "read" | "write" | "delete";
+  operation: "read" | "list" | "write" | "mkdir" | "delete";
   path: string;
   encoding: BotmaxFileEncoding;
+  includeHidden?: boolean;
   content?: string;
   ensureDirectory?: boolean;
+  recursive?: boolean;
 };
 
 type BotmaxSenderContext = {
@@ -222,6 +226,39 @@ type BotmaxTransportFileWrite = {
   extensions?: Record<string, unknown>;
 };
 
+type BotmaxTransportFileList = {
+  v: typeof BOTMAX_TRANSPORT_VERSION;
+  type: typeof FILE_LIST_TYPE;
+  transport: BotmaxTransportContext;
+  origin: BotmaxOriginContext;
+  file: BotmaxFileContext & {
+    operation: "list";
+  };
+  extensions?: Record<string, unknown>;
+};
+
+type BotmaxTransportDirectoryCreate = {
+  v: typeof BOTMAX_TRANSPORT_VERSION;
+  type: typeof DIRECTORY_CREATE_TYPE;
+  transport: BotmaxTransportContext;
+  origin: BotmaxOriginContext;
+  file: BotmaxFileContext & {
+    operation: "mkdir";
+  };
+  extensions?: Record<string, unknown>;
+};
+
+type BotmaxTransportFileDelete = {
+  v: typeof BOTMAX_TRANSPORT_VERSION;
+  type: typeof FILE_DELETE_TYPE;
+  transport: BotmaxTransportContext;
+  origin: BotmaxOriginContext;
+  file: BotmaxFileContext & {
+    operation: "delete";
+  };
+  extensions?: Record<string, unknown>;
+};
+
 type BotmaxTransportFileResult = {
   v: typeof BOTMAX_TRANSPORT_VERSION;
   type: typeof FILE_RESULT_TYPE;
@@ -242,7 +279,10 @@ type BotmaxTransportParams =
   | BotmaxTransportCommandExec
   | BotmaxTransportCommandResult
   | BotmaxTransportFileRead
+  | BotmaxTransportFileList
   | BotmaxTransportFileWrite
+  | BotmaxTransportDirectoryCreate
+  | BotmaxTransportFileDelete
   | BotmaxTransportFileResult;
 
 type BotmaxJsonRpcFrame = {
@@ -298,12 +338,24 @@ export type BotmaxInboundMessage =
       encoding: BotmaxFileEncoding;
     }
   | {
+      kind: "file.list";
+      requestId?: JsonRpcId;
+      path: string;
+      includeHidden: boolean;
+    }
+  | {
       kind: "file.write";
       requestId?: JsonRpcId;
       path: string;
       encoding: BotmaxFileEncoding;
       content: string;
       ensureDirectory: boolean;
+    }
+  | {
+      kind: "directory.create";
+      requestId?: JsonRpcId;
+      path: string;
+      recursive: boolean;
     }
   | {
       kind: "file.delete";
@@ -830,11 +882,19 @@ function parseFileContext(value: unknown): BotmaxFileContext | null {
   if (!operation || !path || !encoding) {
     return null;
   }
-  if (operation !== "read" && operation !== "write" && operation !== "delete") {
+  if (
+    operation !== "read" &&
+    operation !== "list" &&
+    operation !== "write" &&
+    operation !== "mkdir" &&
+    operation !== "delete"
+  ) {
     return null;
   }
   const content = typeof value.content === "string" ? value.content : undefined;
+  const includeHidden = normalizeBoolean(value.includeHidden);
   const ensureDirectory = normalizeBoolean(value.ensureDirectory);
+  const recursive = normalizeBoolean(value.recursive);
   if (operation === "write" && content == null) {
     return null;
   }
@@ -842,8 +902,10 @@ function parseFileContext(value: unknown): BotmaxFileContext | null {
     operation,
     path,
     encoding,
+    includeHidden,
     content,
     ensureDirectory,
+    recursive,
   };
 }
 
@@ -990,6 +1052,19 @@ function parseJsonRpcMessage(trimmed: string): BotmaxInboundMessage | null {
     };
   }
 
+  if (type === FILE_LIST_TYPE) {
+    const file = parseFileContext(params.file);
+    if (!file || file.operation !== "list") {
+      return null;
+    }
+    return {
+      kind: "file.list",
+      requestId,
+      path: file.path,
+      includeHidden: file.includeHidden ?? true,
+    };
+  }
+
   if (type === FILE_WRITE_TYPE) {
     const file = parseFileContext(params.file);
     if (!file || file.operation !== "write" || file.content == null) {
@@ -1002,6 +1077,19 @@ function parseJsonRpcMessage(trimmed: string): BotmaxInboundMessage | null {
       encoding: file.encoding,
       content: file.content,
       ensureDirectory: file.ensureDirectory ?? true,
+    };
+  }
+
+  if (type === DIRECTORY_CREATE_TYPE) {
+    const file = parseFileContext(params.file);
+    if (!file || file.operation !== "mkdir") {
+      return null;
+    }
+    return {
+      kind: "directory.create",
+      requestId,
+      path: file.path,
+      recursive: file.recursive ?? true,
     };
   }
 
@@ -1203,7 +1291,7 @@ export function formatBotmaxOutboundCommandResult(params: {
 }
 
 export function formatBotmaxOutboundFileResult(params: {
-  operation: "read" | "write" | "delete";
+  operation: "read" | "list" | "write" | "mkdir" | "delete";
   path: string;
   encoding: BotmaxFileEncoding;
   ok: boolean;
