@@ -520,6 +520,41 @@
         }
       }
     },
+    "deviceOperation": {
+      "type": "string",
+      "enum": ["list", "approve", "reject", "remove", "clear", "rotate", "revoke"]
+    },
+    "deviceContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation"],
+      "properties": {
+        "operation": {
+          "$ref": "#/$defs/deviceOperation"
+        },
+        "pairingRequestId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "latest": {
+          "type": "boolean"
+        },
+        "includePending": {
+          "type": "boolean"
+        },
+        "deviceId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "role": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "scopes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        }
+      }
+    },
     "fileContext": {
       "type": "object",
       "additionalProperties": false,
@@ -663,6 +698,59 @@
         },
         "command": {
           "$ref": "#/$defs/commandResultContext"
+        },
+        "result": {
+          "$ref": "#/$defs/resultContext"
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensionsContext"
+        }
+      }
+    },
+    "deviceRequestParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "type", "transport", "origin", "device"],
+      "properties": {
+        "v": {
+          "const": 3
+        },
+        "type": {
+          "const": "device.request"
+        },
+        "transport": {
+          "$ref": "#/$defs/transportContext"
+        },
+        "origin": {
+          "$ref": "#/$defs/originContext"
+        },
+        "device": {
+          "$ref": "#/$defs/deviceContext"
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensionsContext"
+        }
+      }
+    },
+    "deviceResultParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "type", "transport", "origin", "device", "result"],
+      "properties": {
+        "v": {
+          "const": 3
+        },
+        "type": {
+          "const": "device.result"
+        },
+        "transport": {
+          "$ref": "#/$defs/transportContext"
+        },
+        "origin": {
+          "$ref": "#/$defs/originContext"
+        },
+        "device": {
+          "$ref": "#/$defs/deviceContext"
         },
         "result": {
           "$ref": "#/$defs/resultContext"
@@ -891,6 +979,12 @@
         },
         {
           "$ref": "#/$defs/commandResultParams"
+        },
+        {
+          "$ref": "#/$defs/deviceRequestParams"
+        },
+        {
+          "$ref": "#/$defs/deviceResultParams"
         },
         {
           "$ref": "#/$defs/fileReadParams"

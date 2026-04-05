@@ -109,6 +109,39 @@ export type BotmaxCommandExecutionResult = {
   output: string;
 };
 
+export type BotmaxDeviceOperationRequest =
+  | {
+      operation: "list";
+    }
+  | {
+      operation: "approve";
+      pairingRequestId?: string;
+      latest?: boolean;
+    }
+  | {
+      operation: "reject";
+      pairingRequestId: string;
+    }
+  | {
+      operation: "remove";
+      deviceId: string;
+    }
+  | {
+      operation: "clear";
+      includePending?: boolean;
+    }
+  | {
+      operation: "rotate";
+      deviceId: string;
+      role: string;
+      scopes?: string[];
+    }
+  | {
+      operation: "revoke";
+      deviceId: string;
+      role: string;
+    };
+
 const DOUBLE_QUOTE_ESCAPES = new Set(["\\", '"', "$", "`", "\n", "\r"]);
 const SUPPORTED_BOTMAX_COMMANDS = [
   "openclaw devices list",
@@ -989,132 +1022,7 @@ export async function executeBotmaxGatewayCommand(params: {
   }
 
   try {
-    let data: unknown;
-
-    if (mapped.kind === "devices.list") {
-      data = await listDevicePairing();
-    } else if (mapped.kind === "gateway.restart") {
-      data = requestInProcessGatewayRestart();
-      return {
-        ok: true,
-        method: mapped.method,
-        data,
-        output: "gateway restart signal emitted",
-      };
-    } else if (mapped.kind === "devices.approve") {
-      const requestId = mapped.latest
-        ? (await listDevicePairing()).pending[0]?.requestId
-        : mapped.requestId?.trim();
-      if (!requestId) {
-        throw new Error("no pending pairing request available");
-      }
-      const approved = await approveDevicePairing(requestId);
-      if (!approved) {
-        throw new Error(`pairing request not found: ${requestId}`);
-      }
-      data = approved;
-    } else if (mapped.kind === "devices.reject") {
-      const rejected = await rejectDevicePairingLocally(mapped.requestId);
-      if (!rejected) {
-        throw new Error(`pairing request not found: ${mapped.requestId}`);
-      }
-      data = rejected;
-    } else if (mapped.kind === "devices.remove") {
-      const removed = await removePairedDeviceLocally(mapped.deviceId);
-      if (!removed) {
-        throw new Error(`paired device not found: ${mapped.deviceId}`);
-      }
-      data = removed;
-    } else if (mapped.kind === "devices.clear") {
-      data = await clearDevicePairingLocally({
-        includePending: mapped.includePending,
-      });
-    } else if (mapped.kind === "devices.rotate") {
-      const rotated = await rotateDeviceTokenLocally({
-        deviceId: mapped.deviceId,
-        role: mapped.role,
-        scopes: mapped.scopes,
-      });
-      if (!rotated) {
-        throw new Error(`device token rotate failed for ${mapped.deviceId}/${mapped.role}`);
-      }
-      data = {
-        deviceId: mapped.deviceId,
-        role: rotated.role,
-        token: rotated.token,
-        scopes: rotated.scopes,
-        rotatedAtMs: rotated.rotatedAtMs ?? rotated.createdAtMs,
-      };
-    } else if (mapped.kind === "devices.revoke") {
-      const revoked = await revokeDeviceTokenLocally({
-        deviceId: mapped.deviceId,
-        role: mapped.role,
-      });
-      if (!revoked) {
-        throw new Error(`device token revoke failed for ${mapped.deviceId}/${mapped.role}`);
-      }
-      data = {
-        deviceId: mapped.deviceId,
-        role: revoked.role,
-        revokedAtMs: revoked.revokedAtMs,
-      };
-    } else if (mapped.kind === "nodes.pending") {
-      data = (await listNodePairingLocally()).pending;
-    } else if (mapped.kind === "nodes.approve") {
-      const approved = await approveNodePairingLocally(mapped.requestId);
-      if (!approved) {
-        throw new Error(`node pairing request not found: ${mapped.requestId}`);
-      }
-      data = approved;
-    } else if (mapped.kind === "nodes.reject") {
-      const rejected = await rejectNodePairingLocally(mapped.requestId);
-      if (!rejected) {
-        throw new Error(`node pairing request not found: ${mapped.requestId}`);
-      }
-      data = rejected;
-    } else if (mapped.kind === "nodes.rename") {
-      data = await renamePairedNodeLocally({
-        query: mapped.nodeQuery,
-        displayName: mapped.displayName,
-      });
-    } else if (mapped.kind === "pairing.approve") {
-      const approved = await approveChannelPairingCode({
-        channel: mapped.channel,
-        code: mapped.code,
-        ...(mapped.accountId ? { accountId: mapped.accountId } : {}),
-      });
-      if (!approved) {
-        throw new Error(`No pending pairing request found for code: ${mapped.code}`);
-      }
-      data = {
-        channel: mapped.channel,
-        ...(mapped.accountId ? { accountId: mapped.accountId } : {}),
-        id: approved.id,
-        entry: approved.entry,
-      };
-    } else if (mapped.kind === "directory.groups.list") {
-      if (mapped.channel !== "feishu") {
-        throw new Error(
-          `Botmax only supports directory groups list for channel feishu; received ${mapped.channel}`,
-        );
-      }
-      data = await listFeishuDirectoryGroupsLive({
-        cfg: loadConfig(),
-        ...(mapped.accountId ? { accountId: mapped.accountId } : {}),
-        ...(mapped.query ? { query: mapped.query } : {}),
-        ...(typeof mapped.limit === "number" ? { limit: mapped.limit } : {}),
-      });
-    } else {
-      const _exhaustive: never = mapped;
-      throw new Error(`Unsupported mapped command: ${String(_exhaustive)}`);
-    }
-
-    return {
-      ok: true,
-      method: "method" in mapped ? mapped.method : undefined,
-      data,
-      output: stringifyResult(data),
-    };
+    return await executeMappedCommand(mapped);
   } catch (error) {
     return {
       ok: false,
@@ -1122,4 +1030,220 @@ export async function executeBotmaxGatewayCommand(params: {
       output: error instanceof Error ? error.message : String(error),
     };
   }
+}
+
+export async function executeBotmaxDeviceOperation(
+  params: BotmaxDeviceOperationRequest,
+): Promise<BotmaxCommandExecutionResult> {
+  try {
+    return await executeMappedCommand(mapDeviceOperationToCommandMapping(params));
+  } catch (error) {
+    return {
+      ok: false,
+      method: resolveMethodFromDeviceOperation(params.operation),
+      output: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+function resolveMethodFromDeviceOperation(operation: BotmaxDeviceOperationRequest["operation"]): string {
+  switch (operation) {
+    case "list":
+      return "device.pair.list";
+    case "approve":
+      return "device.pair.approve";
+    case "reject":
+      return "device.pair.reject";
+    case "remove":
+      return "device.pair.remove";
+    case "clear":
+      return "device.pair.clear";
+    case "rotate":
+      return "device.token.rotate";
+    case "revoke":
+      return "device.token.revoke";
+  }
+}
+
+function mapDeviceOperationToCommandMapping(
+  params: BotmaxDeviceOperationRequest,
+): CommandMapping {
+  switch (params.operation) {
+    case "list":
+      return {
+        kind: "devices.list",
+        method: "device.pair.list",
+      };
+    case "approve":
+      return {
+        kind: "devices.approve",
+        method: "device.pair.approve",
+        requestId: params.pairingRequestId?.trim() || undefined,
+        latest: params.latest ?? !params.pairingRequestId,
+      };
+    case "reject":
+      return {
+        kind: "devices.reject",
+        method: "device.pair.reject",
+        requestId: params.pairingRequestId.trim(),
+      };
+    case "remove":
+      return {
+        kind: "devices.remove",
+        method: "device.pair.remove",
+        deviceId: params.deviceId.trim(),
+      };
+    case "clear":
+      return {
+        kind: "devices.clear",
+        method: "device.pair.clear",
+        includePending: Boolean(params.includePending),
+      };
+    case "rotate":
+      return {
+        kind: "devices.rotate",
+        method: "device.token.rotate",
+        deviceId: params.deviceId.trim(),
+        role: params.role.trim(),
+        scopes: params.scopes?.map((scope) => scope.trim()).filter(Boolean),
+      };
+    case "revoke":
+      return {
+        kind: "devices.revoke",
+        method: "device.token.revoke",
+        deviceId: params.deviceId.trim(),
+        role: params.role.trim(),
+      };
+  }
+}
+
+async function executeMappedCommand(
+  mapped: CommandMapping,
+): Promise<BotmaxCommandExecutionResult> {
+  let data: unknown;
+
+  if (mapped.kind === "devices.list") {
+    data = await listDevicePairing();
+  } else if (mapped.kind === "gateway.restart") {
+    data = requestInProcessGatewayRestart();
+    return {
+      ok: true,
+      method: mapped.method,
+      data,
+      output: "gateway restart signal emitted",
+    };
+  } else if (mapped.kind === "devices.approve") {
+    const requestId = mapped.latest
+      ? (await listDevicePairing()).pending[0]?.requestId
+      : mapped.requestId?.trim();
+    if (!requestId) {
+      throw new Error("no pending pairing request available");
+    }
+    const approved = await approveDevicePairing(requestId);
+    if (!approved) {
+      throw new Error(`pairing request not found: ${requestId}`);
+    }
+    data = approved;
+  } else if (mapped.kind === "devices.reject") {
+    const rejected = await rejectDevicePairingLocally(mapped.requestId);
+    if (!rejected) {
+      throw new Error(`pairing request not found: ${mapped.requestId}`);
+    }
+    data = rejected;
+  } else if (mapped.kind === "devices.remove") {
+    const removed = await removePairedDeviceLocally(mapped.deviceId);
+    if (!removed) {
+      throw new Error(`paired device not found: ${mapped.deviceId}`);
+    }
+    data = removed;
+  } else if (mapped.kind === "devices.clear") {
+    data = await clearDevicePairingLocally({
+      includePending: mapped.includePending,
+    });
+  } else if (mapped.kind === "devices.rotate") {
+    const rotated = await rotateDeviceTokenLocally({
+      deviceId: mapped.deviceId,
+      role: mapped.role,
+      scopes: mapped.scopes,
+    });
+    if (!rotated) {
+      throw new Error(`device token rotate failed for ${mapped.deviceId}/${mapped.role}`);
+    }
+    data = {
+      deviceId: mapped.deviceId,
+      role: rotated.role,
+      token: rotated.token,
+      scopes: rotated.scopes,
+      rotatedAtMs: rotated.rotatedAtMs ?? rotated.createdAtMs,
+    };
+  } else if (mapped.kind === "devices.revoke") {
+    const revoked = await revokeDeviceTokenLocally({
+      deviceId: mapped.deviceId,
+      role: mapped.role,
+    });
+    if (!revoked) {
+      throw new Error(`device token revoke failed for ${mapped.deviceId}/${mapped.role}`);
+    }
+    data = {
+      deviceId: mapped.deviceId,
+      role: revoked.role,
+      revokedAtMs: revoked.revokedAtMs,
+    };
+  } else if (mapped.kind === "nodes.pending") {
+    data = (await listNodePairingLocally()).pending;
+  } else if (mapped.kind === "nodes.approve") {
+    const approved = await approveNodePairingLocally(mapped.requestId);
+    if (!approved) {
+      throw new Error(`node pairing request not found: ${mapped.requestId}`);
+    }
+    data = approved;
+  } else if (mapped.kind === "nodes.reject") {
+    const rejected = await rejectNodePairingLocally(mapped.requestId);
+    if (!rejected) {
+      throw new Error(`node pairing request not found: ${mapped.requestId}`);
+    }
+    data = rejected;
+  } else if (mapped.kind === "nodes.rename") {
+    data = await renamePairedNodeLocally({
+      query: mapped.nodeQuery,
+      displayName: mapped.displayName,
+    });
+  } else if (mapped.kind === "pairing.approve") {
+    const approved = await approveChannelPairingCode({
+      channel: mapped.channel,
+      code: mapped.code,
+      ...(mapped.accountId ? { accountId: mapped.accountId } : {}),
+    });
+    if (!approved) {
+      throw new Error(`No pending pairing request found for code: ${mapped.code}`);
+    }
+    data = {
+      channel: mapped.channel,
+      ...(mapped.accountId ? { accountId: mapped.accountId } : {}),
+      id: approved.id,
+      entry: approved.entry,
+    };
+  } else if (mapped.kind === "directory.groups.list") {
+    if (mapped.channel !== "feishu") {
+      throw new Error(
+        `Botmax only supports directory groups list for channel feishu; received ${mapped.channel}`,
+      );
+    }
+    data = await listFeishuDirectoryGroupsLive({
+      cfg: loadConfig(),
+      ...(mapped.accountId ? { accountId: mapped.accountId } : {}),
+      ...(mapped.query ? { query: mapped.query } : {}),
+      ...(typeof mapped.limit === "number" ? { limit: mapped.limit } : {}),
+    });
+  } else {
+    const _exhaustive: never = mapped;
+    throw new Error(`Unsupported mapped command: ${String(_exhaustive)}`);
+  }
+
+  return {
+    ok: true,
+    method: "method" in mapped ? mapped.method : undefined,
+    data,
+    output: stringifyResult(data),
+  };
 }

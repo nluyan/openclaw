@@ -1,10 +1,11 @@
 import WebSocket from "ws";
-import { executeBotmaxGatewayCommand } from "./command-exec.js";
+import { executeBotmaxDeviceOperation, executeBotmaxGatewayCommand } from "./command-exec.js";
 import {
   buildBotmaxUrl,
   clearActiveConnection,
   createBotmaxSender,
   sendBotmaxCommandResult,
+  sendBotmaxDeviceResult,
   sendBotmaxFileResult,
   redactBotmaxUrl,
   rememberBotmaxSender,
@@ -303,6 +304,69 @@ export function monitorBotmaxAccount(options: BotmaxMonitorOptions): {
                 } catch (sendErr) {
                   runtime.error?.(
                     `botmax[${account.accountId}]: command result send error: ${String(sendErr)}`,
+                  );
+                }
+              });
+            return;
+          }
+
+          if (inbound.kind === "device.request") {
+            void executeBotmaxDeviceOperation({
+              operation: inbound.operation,
+              ...(inbound.pairingRequestId
+                ? { pairingRequestId: inbound.pairingRequestId }
+                : {}),
+              ...(typeof inbound.latest === "boolean" ? { latest: inbound.latest } : {}),
+              ...(typeof inbound.includePending === "boolean"
+                ? { includePending: inbound.includePending }
+                : {}),
+              ...(inbound.deviceId ? { deviceId: inbound.deviceId } : {}),
+              ...(inbound.role ? { role: inbound.role } : {}),
+              ...(inbound.scopes ? { scopes: inbound.scopes } : {}),
+            })
+              .then(async (result) => {
+                await sendBotmaxDeviceResult({
+                  accountId: account.accountId,
+                  operation: inbound.operation,
+                  pairingRequestId: inbound.pairingRequestId,
+                  latest: inbound.latest,
+                  includePending: inbound.includePending,
+                  deviceId: inbound.deviceId,
+                  role: inbound.role,
+                  scopes: inbound.scopes,
+                  ok: result.ok,
+                  output: result.output,
+                  errorCode: result.ok ? undefined : "DEVICE_OPERATION_FAILED",
+                  data: result.data,
+                  requestId: inbound.requestId,
+                  platform: "internal",
+                  surface: "botkeeper-control",
+                });
+              })
+              .catch(async (err) => {
+                runtime.error?.(
+                  `botmax[${account.accountId}]: device operation error: ${String(err)}`,
+                );
+                try {
+                  await sendBotmaxDeviceResult({
+                    accountId: account.accountId,
+                    operation: inbound.operation,
+                    pairingRequestId: inbound.pairingRequestId,
+                    latest: inbound.latest,
+                    includePending: inbound.includePending,
+                    deviceId: inbound.deviceId,
+                    role: inbound.role,
+                    scopes: inbound.scopes,
+                    ok: false,
+                    output: err instanceof Error ? err.message : String(err),
+                    errorCode: "DEVICE_OPERATION_FAILED",
+                    requestId: inbound.requestId,
+                    platform: "internal",
+                    surface: "botkeeper-control",
+                  });
+                } catch (sendErr) {
+                  runtime.error?.(
+                    `botmax[${account.accountId}]: device result send error: ${String(sendErr)}`,
                   );
                 }
               });

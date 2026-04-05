@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { executeBotmaxGatewayCommand } from "./command-exec.js";
+import { executeBotmaxDeviceOperation, executeBotmaxGatewayCommand } from "./command-exec.js";
 
 const listDevicePairingMock = vi.fn();
 const approveDevicePairingMock = vi.fn();
@@ -61,6 +61,32 @@ function resetAllMocks() {
 }
 
 describe("botmax command execution", () => {
+  it("maps typed device requests to local device handlers", async () => {
+    resetAllMocks();
+    rotateDeviceTokenLocallyMock.mockResolvedValueOnce({
+      role: "operator",
+      token: "secret",
+      scopes: ["operator.read"],
+      createdAtMs: 1,
+      rotatedAtMs: 2,
+    });
+
+    const result = await executeBotmaxDeviceOperation({
+      operation: "rotate",
+      deviceId: "dev-typed-1",
+      role: "operator",
+      scopes: ["operator.read"],
+    });
+
+    expect(rotateDeviceTokenLocallyMock).toHaveBeenCalledWith({
+      deviceId: "dev-typed-1",
+      role: "operator",
+      scopes: ["operator.read"],
+    });
+    expect(result.ok).toBe(true);
+    expect(result.method).toBe("device.token.rotate");
+  });
+
   it("maps devices list to gateway method", async () => {
     resetAllMocks();
     listDevicePairingMock.mockResolvedValueOnce({ pending: [] });

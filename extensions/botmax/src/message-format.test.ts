@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatBotmaxOutboundCommandResult,
+  formatBotmaxOutboundDeviceResult,
   formatBotmaxOutboundFileResult,
   formatBotmaxOutboundMessage,
   formatBotmaxOutboundText,
@@ -194,6 +195,45 @@ describe("botmax message format", () => {
       requestId: "file-req-1",
       path: "/tmp/demo.txt",
       encoding: "utf8",
+    });
+  });
+
+  it("parses v3 device request frames", () => {
+    const frame = JSON.stringify({
+      jsonrpc: "2.0",
+      method: "botmax.transport",
+      id: "device-req-1",
+      params: {
+        v: 3,
+        type: "device.request",
+        transport: {
+          bridge: "botmax",
+          receivedAtMs: 1773561600000,
+        },
+        origin: {
+          platform: "internal",
+          surface: "internal",
+        },
+        device: {
+          operation: "rotate",
+          deviceId: "dev-1",
+          role: "operator",
+          scopes: ["operator.read"],
+        },
+      },
+    });
+
+    const parsed = parseBotmaxInboundText(frame);
+    expect(parsed).toEqual({
+      kind: "device.request",
+      requestId: "device-req-1",
+      operation: "rotate",
+      pairingRequestId: undefined,
+      latest: undefined,
+      includePending: undefined,
+      deviceId: "dev-1",
+      role: "operator",
+      scopes: ["operator.read"],
     });
   });
 
@@ -706,6 +746,50 @@ describe("botmax message format", () => {
             encoding: "utf8",
             content: "hello",
             sizeBytes: 5,
+          },
+        },
+      },
+    });
+  });
+
+  it("formats outbound device result as v3 json-rpc", () => {
+    const frame = JSON.parse(
+      formatBotmaxOutboundDeviceResult({
+        operation: "list",
+        ok: true,
+        output: "{\"pending\":[],\"paired\":[]}",
+        data: {
+          pending: [],
+          paired: [],
+        },
+        requestId: "device-req-2",
+      }),
+    );
+
+    expect(frame).toMatchObject({
+      jsonrpc: "2.0",
+      method: "botmax.transport",
+      id: "device-req-2",
+      params: {
+        v: 3,
+        type: "device.result",
+        transport: {
+          bridge: "botmax",
+          receivedAtMs: expect.any(Number),
+        },
+        origin: {
+          platform: "internal",
+          surface: "internal",
+        },
+        device: {
+          operation: "list",
+        },
+        result: {
+          ok: true,
+          output: "{\"pending\":[],\"paired\":[]}",
+          data: {
+            pending: [],
+            paired: [],
           },
         },
       },

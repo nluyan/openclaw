@@ -1,9 +1,11 @@
 import WebSocket from "ws";
 import {
   formatBotmaxOutboundCommandResult,
+  formatBotmaxOutboundDeviceResult,
   formatBotmaxOutboundFileResult,
   formatBotmaxOutboundMessage,
   type BotmaxOutboundAttachmentInput,
+  type BotmaxDeviceOperation,
   type BotmaxFileEncoding,
 } from "./message-format.js";
 import { getBotmaxRuntime } from "./runtime.js";
@@ -254,6 +256,52 @@ export async function sendBotmaxFileResult(params: {
   });
   try {
     conn.log?.(`botmax[${params.accountId}] outbound file result raw: ${payload}`);
+  } catch {
+    // Ignore logging failures to avoid blocking outbound delivery.
+  }
+  await conn.sendText(payload);
+  conn.statusSink?.({ lastOutboundAt: Date.now() });
+}
+
+export async function sendBotmaxDeviceResult(params: {
+  accountId: string;
+  operation: BotmaxDeviceOperation;
+  pairingRequestId?: string;
+  latest?: boolean;
+  includePending?: boolean;
+  deviceId?: string;
+  role?: string;
+  scopes?: string[];
+  ok: boolean;
+  output: string;
+  errorCode?: string;
+  data?: unknown;
+  requestId?: string | number | null;
+  platform?: string;
+  surface?: string;
+}): Promise<void> {
+  const conn = getActiveConnection(params.accountId);
+  if (!conn) {
+    throw new Error("Botmax connection is not active");
+  }
+  const payload = formatBotmaxOutboundDeviceResult({
+    operation: params.operation,
+    pairingRequestId: params.pairingRequestId,
+    latest: params.latest,
+    includePending: params.includePending,
+    deviceId: params.deviceId,
+    role: params.role,
+    scopes: params.scopes,
+    ok: params.ok,
+    output: params.output,
+    errorCode: params.errorCode,
+    data: params.data,
+    requestId: params.requestId,
+    platform: params.platform,
+    surface: params.surface,
+  });
+  try {
+    conn.log?.(`botmax[${params.accountId}] outbound device result raw: ${payload}`);
   } catch {
     // Ignore logging failures to avoid blocking outbound delivery.
   }

@@ -6,6 +6,8 @@ const BOTMAX_TRANSPORT_VERSION = 3;
 const CHAT_MESSAGE_TYPE = "chat.message";
 const COMMAND_EXEC_TYPE = "command.exec";
 const COMMAND_RESULT_TYPE = "command.result";
+const DEVICE_REQUEST_TYPE = "device.request";
+const DEVICE_RESULT_TYPE = "device.result";
 const FILE_READ_TYPE = "file.read";
 const FILE_LIST_TYPE = "file.list";
 const FILE_WRITE_TYPE = "file.write";
@@ -77,6 +79,25 @@ type BotmaxFileContext = {
   content?: string;
   ensureDirectory?: boolean;
   recursive?: boolean;
+};
+
+export type BotmaxDeviceOperation =
+  | "list"
+  | "approve"
+  | "reject"
+  | "remove"
+  | "clear"
+  | "rotate"
+  | "revoke";
+
+type BotmaxDeviceContext = {
+  operation: BotmaxDeviceOperation;
+  pairingRequestId?: string;
+  latest?: boolean;
+  includePending?: boolean;
+  deviceId?: string;
+  role?: string;
+  scopes?: string[];
 };
 
 type BotmaxSenderContext = {
@@ -203,6 +224,30 @@ type BotmaxTransportCommandResult = {
   extensions?: Record<string, unknown>;
 };
 
+type BotmaxTransportDeviceRequest = {
+  v: typeof BOTMAX_TRANSPORT_VERSION;
+  type: typeof DEVICE_REQUEST_TYPE;
+  transport: BotmaxTransportContext;
+  origin: BotmaxOriginContext;
+  device: BotmaxDeviceContext;
+  extensions?: Record<string, unknown>;
+};
+
+type BotmaxTransportDeviceResult = {
+  v: typeof BOTMAX_TRANSPORT_VERSION;
+  type: typeof DEVICE_RESULT_TYPE;
+  transport: BotmaxTransportContext;
+  origin: BotmaxOriginContext;
+  device: BotmaxDeviceContext;
+  result: {
+    ok: boolean;
+    output: string;
+    errorCode?: string;
+    data?: unknown;
+  };
+  extensions?: Record<string, unknown>;
+};
+
 type BotmaxTransportFileRead = {
   v: typeof BOTMAX_TRANSPORT_VERSION;
   type: typeof FILE_READ_TYPE;
@@ -278,6 +323,8 @@ type BotmaxTransportParams =
   | BotmaxTransportChatMessage
   | BotmaxTransportCommandExec
   | BotmaxTransportCommandResult
+  | BotmaxTransportDeviceRequest
+  | BotmaxTransportDeviceResult
   | BotmaxTransportFileRead
   | BotmaxTransportFileList
   | BotmaxTransportFileWrite
@@ -331,6 +378,17 @@ export type BotmaxInboundMessage =
       command: string;
       timeoutMs?: number;
     })
+  | {
+      kind: "device.request";
+      requestId?: JsonRpcId;
+      operation: BotmaxDeviceOperation;
+      pairingRequestId?: string;
+      latest?: boolean;
+      includePending?: boolean;
+      deviceId?: string;
+      role?: string;
+      scopes?: string[];
+    }
   | {
       kind: "file.read";
       requestId?: JsonRpcId;
@@ -909,6 +967,46 @@ function parseFileContext(value: unknown): BotmaxFileContext | null {
   };
 }
 
+function parseDeviceOperation(value: unknown): BotmaxDeviceOperation | null {
+  const normalized = normalizeNonEmptyString(value);
+  if (
+    normalized === "list" ||
+    normalized === "approve" ||
+    normalized === "reject" ||
+    normalized === "remove" ||
+    normalized === "clear" ||
+    normalized === "rotate" ||
+    normalized === "revoke"
+  ) {
+    return normalized;
+  }
+  return null;
+}
+
+function parseDeviceContext(value: unknown): BotmaxDeviceContext | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const operation = parseDeviceOperation(value.operation);
+  if (!operation) {
+    return null;
+  }
+  const scopes = Array.isArray(value.scopes)
+    ? value.scopes
+        .map((entry) => normalizeNonEmptyString(entry))
+        .filter((entry): entry is string => Boolean(entry))
+    : undefined;
+  return {
+    operation,
+    pairingRequestId: normalizeNonEmptyString(value.pairingRequestId),
+    latest: normalizeBoolean(value.latest),
+    includePending: normalizeBoolean(value.includePending),
+    deviceId: normalizeNonEmptyString(value.deviceId),
+    role: normalizeNonEmptyString(value.role),
+    scopes,
+  };
+}
+
 function buildInboundBase(params: {
   origin: BotmaxOriginContext;
   conversation: BotmaxConversationContext;
@@ -1036,6 +1134,24 @@ function parseJsonRpcMessage(trimmed: string): BotmaxInboundMessage | null {
       }),
       command,
       timeoutMs,
+    };
+  }
+
+  if (type === DEVICE_REQUEST_TYPE) {
+    const device = parseDeviceContext(params.device);
+    if (!device) {
+      return null;
+    }
+    return {
+      kind: "device.request",
+      requestId,
+      operation: device.operation,
+      pairingRequestId: device.pairingRequestId,
+      latest: device.latest,
+      includePending: device.includePending,
+      deviceId: device.deviceId,
+      role: device.role,
+      scopes: device.scopes,
     };
   }
 
@@ -1320,6 +1436,52 @@ export function formatBotmaxOutboundFileResult(params: {
         operation: params.operation,
         path,
         encoding: params.encoding,
+      },
+      result: {
+        ok: params.ok,
+        output: params.output ?? "",
+        errorCode: normalizeNonEmptyString(params.errorCode),
+        data: params.data,
+      },
+    },
+    params.requestId,
+  );
+}
+
+export function formatBotmaxOutboundDeviceResult(params: {
+  operation: BotmaxDeviceOperation;
+  pairingRequestId?: string;
+  latest?: boolean;
+  includePending?: boolean;
+  deviceId?: string;
+  role?: string;
+  scopes?: string[];
+  ok: boolean;
+  output: string;
+  errorCode?: string;
+  data?: unknown;
+  requestId?: JsonRpcId;
+  platform?: string;
+  surface?: string;
+}): string {
+  const platform = params.platform?.trim() || "internal";
+  return stringifyTransportFrame(
+    {
+      v: BOTMAX_TRANSPORT_VERSION,
+      type: DEVICE_RESULT_TYPE,
+      transport: buildTransportContext(Date.now()),
+      origin: buildOriginContext({
+        platform,
+        surface: params.surface,
+      }),
+      device: {
+        operation: params.operation,
+        pairingRequestId: normalizeNonEmptyString(params.pairingRequestId),
+        latest: params.latest,
+        includePending: params.includePending,
+        deviceId: normalizeNonEmptyString(params.deviceId),
+        role: normalizeNonEmptyString(params.role),
+        scopes: params.scopes?.filter(Boolean),
       },
       result: {
         ok: params.ok,

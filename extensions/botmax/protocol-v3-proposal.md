@@ -3,7 +3,7 @@
 Status:
 
 - Working contract for the Botmax v3 transport shape.
-- The current runtime uses v3 for BotKeeper <-> OpenClaw text chat, attachments, `command.exec`, `command.result`, `file.read`, `file.list`, `file.write`, `directory.create`, `file.delete`, and `file.result`.
+- The current runtime uses v3 for BotKeeper <-> OpenClaw text chat, attachments, `command.exec`, `command.result`, `device.request`, `device.result`, `file.read`, `file.list`, `file.write`, `directory.create`, `file.delete`, and `file.result`.
 - Telegram is the first runtime surface with end-to-end media relay enabled.
 - Current runtime details are documented in [botmax.md](./botmax.md).
 
@@ -469,7 +469,7 @@ Rules:
   "sender": {},
   "message": {},
   "command": {
-    "text": "openclaw devices list",
+    "text": "openclaw nodes pending",
     "timeoutMs": 10000
   },
   "auth": {},
@@ -500,13 +500,65 @@ Notes:
     "threadId": null
   },
   "command": {
-    "text": "openclaw devices list",
-    "method": "device.pair.list"
+    "text": "openclaw nodes pending",
+    "method": "node.pair.list"
   },
   "result": {
     "ok": true,
     "output": "[]",
     "data": []
+  }
+}
+```
+
+Chat-originated `/oc openclaw devices ...` messages can still use `command.exec`, but BotKeeper's internal paired-device control-plane APIs no longer do.
+
+## `device.request`
+
+`device.request` is the typed BotKeeper control-plane RPC for paired-device operations. It is used for paired-device list, approve, reject, remove, clear, rotate, and revoke flows so Server and BotKeeper no longer have to serialize those control-plane requests as `openclaw devices ...` command strings.
+
+### Shape
+
+```json
+{
+  "v": 3,
+  "type": "device.request",
+  "transport": {},
+  "origin": {
+    "platform": "internal",
+    "surface": "internal"
+  },
+  "device": {
+    "operation": "list"
+  }
+}
+```
+
+## `device.result`
+
+`device.result` returns the structured outcome for a `device.request`.
+
+### Shape
+
+```json
+{
+  "v": 3,
+  "type": "device.result",
+  "transport": {},
+  "origin": {
+    "platform": "internal",
+    "surface": "internal"
+  },
+  "device": {
+    "operation": "list"
+  },
+  "result": {
+    "ok": true,
+    "output": "{\"pending\":[],\"paired\":[]}",
+    "data": {
+      "pending": [],
+      "paired": []
+    }
   }
 }
 ```

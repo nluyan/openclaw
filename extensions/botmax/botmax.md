@@ -6,6 +6,7 @@
 - Query parameters such as `botid`, and `token` should be appended directly to `BOTMAX_SERVER` when needed.
 - BotKeeper routes inbound WebSocket text to the corresponding channel (for example, Telegram via `telegram:<userId>`).
 - Telegram is the first Botmax v3 media-enabled upstream and downstream surface.
+- BotKeeper control-plane paired-device operations now use typed `device.request` / `device.result` frames. They no longer depend on `command.exec` carrying `openclaw devices ...` strings.
 
 ## Unified Transport Protocol (JSON-RPC)
 
@@ -110,7 +111,7 @@
       "id": "tg:msg:987654321",
       "nativeId": "987654321",
       "fullId": "telegram:-1001234567890:987654321",
-      "text": "/oc openclaw devices list",
+      "text": "/oc openclaw nodes pending",
       "createdAtMs": 1773561600000,
       "mentions": {
         "botMentioned": false,
@@ -118,7 +119,7 @@
       }
     },
     "command": {
-      "text": "openclaw devices list",
+      "text": "openclaw nodes pending",
       "timeoutMs": 10000
     },
     "auth": {
@@ -137,7 +138,7 @@ BotKeeper may still send trusted operational commands such as `openclaw gateway 
 {
   "jsonrpc": "2.0",
   "method": "botmax.transport",
-  "id": "cmd-001",
+  "id": "cmd-002",
   "params": {
     "v": 3,
     "type": "command.result",
@@ -155,13 +156,75 @@ BotKeeper may still send trusted operational commands such as `openclaw gateway 
       "agentId": "main"
     },
     "command": {
-      "text": "openclaw devices list",
-      "method": "device.pair.list"
+      "text": "openclaw nodes pending",
+      "method": "node.pair.list"
     },
     "result": {
       "ok": true,
       "output": "{ ...stringified result... }",
       "data": {}
+    }
+  }
+}
+```
+
+Chat-originated `/oc openclaw devices ...` messages can still use `command.exec`, but BotKeeper's internal paired-device control-plane APIs no longer do.
+
+### Device Request Frame
+
+`device.request` is the BotKeeper control-plane RPC for paired-device operations. It routes structured device operations into the same in-process handlers without constructing `openclaw devices ...` command strings.
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "botmax.transport",
+  "id": "device-001",
+  "params": {
+    "v": 3,
+    "type": "device.request",
+    "transport": {
+      "bridge": "botmax",
+      "receivedAtMs": 1773561600000
+    },
+    "origin": {
+      "platform": "internal",
+      "surface": "internal"
+    },
+    "device": {
+      "operation": "list"
+    }
+  }
+}
+```
+
+### Device Result Frame
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "botmax.transport",
+  "id": "device-001",
+  "params": {
+    "v": 3,
+    "type": "device.result",
+    "transport": {
+      "bridge": "botmax",
+      "receivedAtMs": 1773561600100
+    },
+    "origin": {
+      "platform": "internal",
+      "surface": "internal"
+    },
+    "device": {
+      "operation": "list"
+    },
+    "result": {
+      "ok": true,
+      "output": "{ ...stringified result... }",
+      "data": {
+        "pending": [],
+        "paired": []
+      }
     }
   }
 }
@@ -233,6 +296,8 @@ BotKeeper may still send trusted operational commands such as `openclaw gateway 
 
 ## Supported OpenClaw Commands
 
+End-user `/oc openclaw ...` messages can still use these allowlisted command strings. BotKeeper's internal paired-device APIs call the same device handlers through `device.request` instead of `command.exec`.
+
 - `openclaw devices list` -> `device.pair.list`
 - `openclaw devices approve <requestId>` -> `device.pair.approve`
 - `openclaw devices approve --latest` -> `device.pair.approve` with latest pending request
@@ -260,8 +325,8 @@ BotKeeper may still send trusted operational commands such as `openclaw gateway 
 ## Protocol Rules
 
 - BotKeeper <-> OpenClaw only accepts JSON-RPC `botmax.transport` frames with `params.v=3`.
-- OpenClaw accepts `chat.message`, `command.exec`, `file.read`, `file.list`, `file.write`, `directory.create`, and `file.delete`.
-- BotKeeper consumes `chat.message`, `command.result`, and `file.result`.
+- OpenClaw accepts `chat.message`, `command.exec`, `device.request`, `file.read`, `file.list`, `file.write`, `directory.create`, and `file.delete`.
+- BotKeeper consumes `chat.message`, `command.result`, `device.result`, and `file.result`.
 - `conversation.id` is the conversation identity for routing and session scoping.
 - `conversation.replyTargetId` is the concrete delivery target for replies and command results.
 - `conversation.agentId` is an optional trusted ingress routing hint. When present, the Botmax plugin routes directly to that OpenClaw agent without requiring a matching `bindings` entry in `openclaw.json`.
@@ -272,6 +337,7 @@ BotKeeper may still send trusted operational commands such as `openclaw gateway 
 - For `origin.platform = email`, the Botmax plugin also appends the inbound email subject and parsed `From` fields into OpenClaw's existing `UntrustedContext` metadata block instead of rewriting `Body` or `BodyForCommands`.
 - The Telegram -> BotKeeper bridge currently forwards sender labels, usernames, message ids, reply targets, group titles, and thread ids when Telegram provides them.
 - Botmax chat replies end with the actual outbound message only; the plugin does not append any `<<<done>>>` marker.
+- BotKeeper's internal paired-device control-plane path uses `device.request` / `device.result`. Only explicit command flows, such as `/oc openclaw devices ...`, use `command.exec`.
 - `file.read`, `file.write`, and `file.delete` currently support `utf8` and `base64` encodings.
 - `file.list` always uses `utf8` metadata payloads and can include dot-prefixed entries when BotKeeper sets `includeHidden = true`.
 - `file.write` creates parent directories by default when BotKeeper requests `ensureDirectory = true`.
@@ -282,7 +348,7 @@ BotKeeper may still send trusted operational commands such as `openclaw gateway 
 
 - The fuller v3 contract, including attachment and file fields, is documented in [protocol-v3-proposal.md](./protocol-v3-proposal.md).
 - The machine-readable schema lives in [protocol-v3.schema.json](./protocol-v3.schema.json).
-- The current runtime implements the v3 text, command, attachment, and file-operation envelope end-to-end between BotKeeper and the OpenClaw Botmax plugin.
+- The current runtime implements the v3 text, command, device-operation, attachment, and file-operation envelope end-to-end between BotKeeper and the OpenClaw Botmax plugin.
 - Telegram inbound media currently covers `photo`, `voice`, `audio`, `video`, `document`, and `sticker`.
 - BotKeeper downloads Telegram media, uploads it to the private R2 bucket, and forwards signed `fetchUrl` attachment references to OpenClaw.
 - OpenClaw materializes inbound attachments into temp files and maps them into media-aware inbound context fields such as `MediaPath`, `MediaPaths`, `MediaType`, and `MediaTypes`.
