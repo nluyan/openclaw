@@ -660,9 +660,30 @@ describe("botmax inbound replies", () => {
       runtime,
     });
 
-    expect(runtime.log).toHaveBeenCalledWith(expect.stringContaining('"assistantTail":[{'));
+    expect(sendBotmaxTextMock).toHaveBeenCalledWith(
+      "default",
+      "email-msg:reply-target|binding:test",
+      "[[reply_to_current]] Received.",
+      {
+        requestId: undefined,
+        chatType: "direct",
+        conversationId: "email:alice@example.com",
+        conversationNativeId: undefined,
+        platform: "botmax",
+        surface: "botmax",
+        botUsername: undefined,
+        threadId: undefined,
+      },
+    );
     expect(runtime.log).toHaveBeenCalledWith(
+      expect.stringContaining("delivered transcript fallback for sender email:alice@example.com"),
+    );
+    expect(runtime.log).not.toHaveBeenCalledWith(expect.stringContaining('"assistantTail":[{'));
+    expect(runtime.log).not.toHaveBeenCalledWith(
       expect.stringContaining('"textPreview":"[[reply_to_current]] Received."'),
+    );
+    expect(runtime.log).not.toHaveBeenCalledWith(
+      expect.stringContaining("no outbound reply for sender email:alice@example.com"),
     );
   });
 

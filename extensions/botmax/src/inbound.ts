@@ -199,13 +199,14 @@ function summarizeTranscriptAssistantEntry(entry: unknown): Record<string, unkno
     errorMessage:
       typeof record.message.errorMessage === "string" ? record.message.errorMessage : undefined,
     textPreview: normalizeBotmaxLogPreview(textPart?.text),
+    text: typeof textPart?.text === "string" ? textPart.text.trim() || undefined : undefined,
   };
 }
 
 async function inspectBotmaxSessionTranscript(params: {
   storePath: string;
   sessionKey: string;
-}): Promise<string | undefined> {
+}): Promise<{ summary?: string; latestAssistantText?: string }> {
   try {
     const rawStore = await readFile(params.storePath, "utf8");
     const parsedStore = JSON.parse(rawStore) as Record<string, unknown>;
@@ -244,14 +245,27 @@ async function inspectBotmaxSessionTranscript(params: {
       }
     }
 
-    return JSON.stringify({
-      sessionFile,
-      assistantTail: assistantEntries,
+    const latestAssistantText = assistantEntries
+      .map((entry) => (typeof entry.text === "string" ? entry.text.trim() : undefined))
+      .find((entry): entry is string => Boolean(entry));
+    const assistantTail = assistantEntries.map((entry) => {
+      const { text: _text, ...summary } = entry;
+      return summary;
     });
+
+    return {
+      summary: JSON.stringify({
+        sessionFile,
+        assistantTail,
+      }),
+      latestAssistantText,
+    };
   } catch (error) {
-    return JSON.stringify({
-      diagnosticError: String(error),
-    });
+    return {
+      summary: JSON.stringify({
+        diagnosticError: String(error),
+      }),
+    };
   }
 }
 
@@ -562,16 +576,47 @@ export async function handleBotmaxInbound(params: {
   } finally {
     try {
       if (outboundDelivered === 0) {
-        const sessionTranscript =
+        const transcriptInspection =
           skippedReplies.length === 0
             ? await inspectBotmaxSessionTranscript({
                 storePath,
                 sessionKey: ctxPayload.SessionKey ?? route.sessionKey,
               })
             : undefined;
-        runtime.log?.(
-          `botmax[${account.accountId}] no outbound reply for sender ${senderId} (target=${replyTargetId}, agent=${route.agentId}, queuedFinal=${dispatchResult?.queuedFinal ?? false}, counts=${JSON.stringify(dispatchResult?.counts ?? { tool: 0, block: 0, final: 0 })}, skipped=${JSON.stringify(skippedReplies)}${sessionTranscript ? `, transcript=${sessionTranscript}` : ""})`,
-        );
+
+        if (
+          skippedReplies.length === 0 &&
+          outboundDelivered === 0 &&
+          transcriptInspection?.latestAssistantText?.trim()
+        ) {
+          try {
+            await sendBotmaxText(account.accountId, replyTargetId, transcriptInspection.latestAssistantText, {
+              requestId,
+              chatType,
+              conversationId: normalizedConversationId,
+              conversationNativeId: normalizedConversationNativeId,
+              platform: normalizedProvider,
+              surface: normalizedSurface,
+              botUsername,
+              threadId,
+            });
+            outboundDelivered += 1;
+            runtime.log?.(
+              `botmax[${account.accountId}] delivered transcript fallback for sender ${senderId} (target=${replyTargetId}, agent=${route.agentId})`,
+            );
+          } catch (error) {
+            runtime.error?.(
+              `botmax transcript fallback send failed: ${String(error)}`,
+            );
+          }
+        }
+
+        if (outboundDelivered === 0) {
+          const sessionTranscript = transcriptInspection?.summary;
+          runtime.log?.(
+            `botmax[${account.accountId}] no outbound reply for sender ${senderId} (target=${replyTargetId}, agent=${route.agentId}, queuedFinal=${dispatchResult?.queuedFinal ?? false}, counts=${JSON.stringify(dispatchResult?.counts ?? { tool: 0, block: 0, final: 0 })}, skipped=${JSON.stringify(skippedReplies)}${sessionTranscript ? `, transcript=${sessionTranscript}` : ""})`,
+          );
+        }
       }
     } finally {
       releaseHeartbeat();
